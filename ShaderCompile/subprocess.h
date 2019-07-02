@@ -76,28 +76,27 @@ private:
 //
 // Response implementation
 //
-class CSubProcessResponse : public CmdSink::IResponse
+class CSubProcessResponse final : public CmdSink::IResponse
 {
 public:
-	explicit CSubProcessResponse( void const* pvMemory );
+	explicit CSubProcessResponse( const void* pvMemory );
 	~CSubProcessResponse() override = default;
 
-public:
-	bool Succeeded() override { return ( 1 == m_dwResult ); }
-	size_t GetResultBufferLen() override { return ( Succeeded() ? m_dwResultBufferLength : 0 ); }
-	const void* GetResultBuffer() override { return ( Succeeded() ? m_pvResultBuffer : nullptr ); }
-	const char* GetListing() override { return ( m_szListing && *m_szListing ) ? m_szListing : nullptr; }
+	bool Succeeded() override { return 1 == m_dwResult; }
+	size_t GetResultBufferLen() override { return Succeeded() ? m_dwResultBufferLength : 0; }
+	const void* GetResultBuffer() override { return Succeeded() ? m_pvResultBuffer : nullptr; }
+	const char* GetListing() override { return m_szListing && *m_szListing ? m_szListing : nullptr; }
 
 protected:
-	void const* m_pvMemory;
+	const void* m_pvMemory;
 	DWORD m_dwResult;
 	DWORD m_dwResultBufferLength;
-	void const* m_pvResultBuffer;
+	const void* m_pvResultBuffer;
 	const char* m_szListing;
 };
 
 
-int ShaderCompile_Subprocess_Main( std::string szSubProcessData, DWORD flags );
+int ShaderCompile_Subprocess_Main( std::string szSubProcessData, DWORD flags, bool local );
 
 
 #endif // #ifndef SUBPROCESS_H

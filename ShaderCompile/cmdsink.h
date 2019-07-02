@@ -22,8 +22,9 @@ struct IResponse
 Interface to give back command execution results.
 
 */
-struct IResponse
+class IResponse
 {
+public:
 	virtual ~IResponse() = default;
 	virtual void Release() { delete this; }
 
@@ -44,13 +45,12 @@ struct IResponse
 Response implementation when the result is a generic error.
 
 */
-class CResponseError : public IResponse
+class CResponseError final : public IResponse
 {
 public:
 	explicit CResponseError() = default;
 	~CResponseError() override = default;
 
-public:
 	bool Succeeded() override { return false; }
 
 	size_t GetResultBufferLen() override { return 0; }

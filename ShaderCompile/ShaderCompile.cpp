@@ -36,12 +36,13 @@
 #include "DbgHelp.h"
 
 #include "gsl/string_span"
-#include "ezOptionParser.hpp"
 
+#include "ezOptionParser.hpp"
 #include "termcolor/style.hpp"
 
 #include <ctime>
 #include <iomanip>
+#include <thread>
 
 extern "C" {
 #define _7ZIP_ST
@@ -63,11 +64,54 @@ static ez::ezOptionParser cmdLine;
 namespace clr
 {
 	using namespace termcolor;
-	static const auto red = _internal::ansi_color( color( 255, 0, 0 ) );
-	static const auto green = _internal::ansi_color( color( 0, 255, 0 ) );
-	static const auto blue = _internal::ansi_color( color( 0, 0, 255 ) );
+	static const auto red = _internal::ansi_color( color( 222, 12, 17 ) );
+	static const auto green = _internal::ansi_color( color( 33, 201, 41 ) );
+	static const auto green2 = _internal::ansi_color( color( 12, 222, 154 ) );
+	static const auto blue = _internal::ansi_color( color( 14, 70, 220 ) );
 	static const auto pinkish = _internal::ansi_color( color( 254, 90, 90 ) );
 }
+
+template <typename StorageType, uint32 TBufferSize>
+class CUtlMovingAverage
+{
+public:
+	CUtlMovingAverage() : m_buffer{ 0 }, m_nValuesPushed( 0 ), m_nIndex( 0 ), m_total( 0 )
+	{
+	}
+
+	void Reset()
+	{
+		m_nValuesPushed = 0;
+		m_nIndex = 0;
+		m_total = 0;
+		memset( m_buffer, 0, sizeof( m_buffer ) );
+	}
+
+	[[nodiscard]] StorageType GetAverage() const
+	{
+		const uint32 n = Min( TBufferSize, m_nIndex );
+		return gsl::narrow_cast<StorageType>( n ? ( m_total / static_cast<double>( n ) ) : 0 );
+	}
+
+	void PushValue( StorageType v )
+	{
+		uint32 nIndex = m_nValuesPushed % TBufferSize;
+		m_nValuesPushed = nIndex + 1;
+		m_nIndex = Max( m_nIndex, m_nValuesPushed );
+
+		m_total -= m_buffer[nIndex];
+		m_total += v;
+
+		m_buffer[nIndex] = v;
+	}
+
+private:
+	StorageType m_buffer[TBufferSize];
+	uint32 m_nValuesPushed;
+	uint32 m_nIndex;
+
+	StorageType m_total;
+};
 
 namespace CRC32
 {
@@ -335,7 +379,7 @@ static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> g_arrCompileEntries;
 static uint64 g_numShaders = 0, g_numCompileCommands = 0, g_numStaticCombos = 0;
 static uint64 g_numCommandsCompleted = 0;
 
-static void __PrettyPrintNumber( std::ios_base& s, uint64 k )
+static std::string PrettyPrintNumber( uint64 k )
 {
 	char chCompileString[50] = { 0 };
 	char* pchPrint = chCompileString + sizeof( chCompileString ) - 3;
@@ -345,13 +389,65 @@ static void __PrettyPrintNumber( std::ios_base& s, uint64 k )
 		*pchPrint-- = '0' + char( k % 10 );
 	}
 	*++pchPrint ? 0 : *pchPrint = 0;
-	dynamic_cast<std::ostream&>( s ) << pchPrint;
+	return pchPrint;
+}
+
+static void __PrettyPrintNumber( std::ios_base& s, uint64 k )
+{
+	dynamic_cast<std::ostream&>( s ) << PrettyPrintNumber( k );
 }
 
 static std::_Smanip<uint64> PrettyPrint( uint64 i )
 {
 	return { __PrettyPrintNumber, i };
 }
+
+static void __FormatTime( std::ios_base& s, uint64 nInputSeconds )
+{
+	uint64 nMinutes = nInputSeconds / 60;
+	const uint64 nSeconds = nInputSeconds - nMinutes * 60;
+	const uint64 nHours = nMinutes / 60;
+	nMinutes -= nHours * 60;
+
+	constexpr const char* const extra[2] = { "", "s" };
+
+	auto& str = dynamic_cast<std::ostream&>( s );
+	if ( nHours > 0 )
+		str << clr::green << nHours << clr::reset << " hour" << extra[nHours != 1] << ", " << clr::green << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
+	else if ( nMinutes > 0 )
+		str << clr::green << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
+	else
+		str << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
+}
+
+static void __FormatTime2( std::ios_base& s, uint64 nInputSeconds )
+{
+	uint64 nMinutes = nInputSeconds / 60;
+	const uint64 nSeconds = nInputSeconds - nMinutes * 60;
+	const uint64 nHours = nMinutes / 60;
+	nMinutes -= nHours * 60;
+
+	constexpr const char* const extra[2] = { "", "s" };
+
+	auto& str = dynamic_cast<std::ostream&>( s );
+	if ( nHours > 0 )
+		str << clr::green << nHours << clr::reset << ":" << clr::green << nMinutes << clr::reset << ":" << clr::green << nSeconds << clr::reset;
+	else if ( nMinutes > 0 )
+		str << clr::green << nMinutes << clr::reset << ":" << clr::green << nSeconds << clr::reset;
+	else
+		str << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
+}
+
+static std::_Smanip<uint64> FormatTime( uint64 i )
+{
+	return { __FormatTime, i };
+}
+
+static std::_Smanip<uint64> FormatTimeShort( uint64 i )
+{
+	return { __FormatTime2, i };
+}
+
 
 static FORCEINLINE bool PATHSEPARATOR( char c )
 {
@@ -435,7 +531,6 @@ static char g_ExeDir[MAX_PATH];
 static double g_flStartTime;
 static bool g_bVerbose = false;
 static bool g_bVerbose2 = false;
-static bool g_bSuppressWarnings = false;
 
 struct ShaderInfo_t
 {
@@ -596,7 +691,8 @@ protected:
 
 static CUtlStringMap<uint8> g_Master_ShaderHadError;
 static CUtlStringMap<uint8> g_Master_ShaderWrittenToDisk;
-static CUtlStringMap<CompilerMsgInfo> g_Master_CompilerMsgInfo;
+static CUtlStringMap<CompilerMsgInfo> g_Master_CompilerMsgError;
+static CUtlStringMap<CompilerMsgInfo> g_Master_CompilerMsgWarning;
 
 namespace Threading
 {
@@ -1130,16 +1226,17 @@ static char* ConsumeCharacters( char* szString, T pred )
 	return szString;
 }
 
-static char* FindNext( char* szString, const char* szSearchSet )
+template <typename T>
+static T* FindNext( T* szString, const char* szSearchSet )
 {
 	bool bFound = szString == nullptr;
-	char* szNext = nullptr;
+	T* szNext = nullptr;
 
 	if ( szString && szSearchSet )
 	{
 		for ( ; *szSearchSet; ++szSearchSet )
 		{
-			if ( char* szTmp = strchr( szString, *szSearchSet ) )
+			if ( T* szTmp = strchr( szString, *szSearchSet ) )
 			{
 				szNext = bFound ? ( Min( szNext, szTmp ) ) : szTmp;
 				bFound = true;
@@ -1170,80 +1267,13 @@ static char* FindLast( char* szString, const char* szSearchSet )
 	return bFound ? szNext : nullptr;
 }
 
-static void ErrMsgDispatchMsgLine( const char* szCommand, char* szMsgLine, const char* szShaderName = nullptr )
+static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine )
 {
-	// When the filename is specified in front of the message, make sure it is truncated to the bare name only
-	if ( isalpha( *szMsgLine ) && szMsgLine[1] == ':' )
-		// Preceded by drive letter
-		szMsgLine += 2;
-
-	// Trim the path from the msg
-	// e.g. make string
-	//    c:\temp\shadercompiletemp\1234\myfile.fxc(435): warning X3083: Truncating ...
-	// look like
-	//    myfile.fxc(435): warning X3083: Truncating ...
-	// which will be both readable and same coming from different worker machines
-	char* szEndFileLinePlant = FindNext( szMsgLine, ":" );
-	if ( szEndFileLinePlant && ':' == *szEndFileLinePlant )
-	{
-		*szEndFileLinePlant = 0;
-		if ( char* szLastSlash = FindLast( szMsgLine, "\\/" ) )
-		{
-			if ( *szLastSlash )
-			{
-				*szLastSlash = 0;
-				szMsgLine = szLastSlash + 1;
-			}
-		}
-		*szEndFileLinePlant = ':';
-	}
-
-	// If the shader file name is not given in the message add it
-	if ( szShaderName )
-	{
-		static char chFitLongMsgLine[4096];
-
-		if ( *szMsgLine == '(' )
-		{
-			sprintf_s( chFitLongMsgLine, "%s%s", szShaderName, szMsgLine );
-			szMsgLine = chFitLongMsgLine;
-		}
-		else if ( !strncmp( szMsgLine, "memory(", 7 ) )
-		{
-			sprintf_s( chFitLongMsgLine, "%s%s", szShaderName, szMsgLine + 6 );
-			szMsgLine = chFitLongMsgLine;
-		}
-	}
-
 	// Now store the message with the command it was generated from
-	g_Master_CompilerMsgInfo[szMsgLine].SetMsgReportedCommand( szCommand );
-}
-
-static void ErrMsgDispatchInt( char* szMessage, const char* szShaderName = nullptr )
-{
-	// First line is the command number "szCommand"
-	char* szCommand = ConsumeCharacters( szMessage, isspace );
-	char* szMessageListing = FindNext( szCommand, "\r\n" );
-	char chTerminator = *szMessageListing;
-	*szMessageListing++ = 0;
-
-	// Now come the command lines actually
-	while ( chTerminator )
-	{
-		char* szMsgText = ConsumeCharacters( szMessageListing, isspace );
-		szMessageListing = FindNext( szMsgText, "\r\n" );
-		chTerminator = *szMessageListing;
-		*szMessageListing++ = 0;
-
-		if ( *szMsgText )
-		{
-			char* find = FindNext( szCommand, ">" );
-			// Trim command at redirection character if present
-			if ( find )
-				*find = 0;
-			ErrMsgDispatchMsgLine( szCommand, szMsgText, szShaderName );
-		}
-	}
+	if ( strstr( szMsgLine, "warning X" ) )
+		g_Master_CompilerMsgWarning[szMsgLine].SetMsgReportedCommand( szCommand );
+	else
+		g_Master_CompilerMsgError[szMsgLine].SetMsgReportedCommand( szCommand );
 }
 
 static void ShaderHadErrorDispatchInt( const char* szShader )
@@ -1460,7 +1490,6 @@ static void WriteShaderFiles( const char* pShaderName )
 
 	if ( bShaderFailed )
 	{
-		std::cout << clr::pinkish << "Removing failed shader file \"" << clr::red << szVCSfilename << clr::pinkish << "\"." << clr::reset << std::endl;
 		_unlink( szVCSfilename );
 		return;
 	}
@@ -1497,9 +1526,9 @@ static void WriteShaderFiles( const char* pShaderName )
 				Hdr.m_pByteCode = pStatic;
 				// now, see if we have an identical static combo
 				bool bIsDuplicate = false;
-				for ( size_t i = 0; i < comboIndicesHashedByCRC32[nHashIdx].size(); i++ )
+				for ( int i : comboIndicesHashedByCRC32[nHashIdx] )
 				{
-					const StaticComboAuxInfo_t& check = StaticComboHeaders[comboIndicesHashedByCRC32[nHashIdx][i]];
+					const StaticComboAuxInfo_t& check = StaticComboHeaders[i];
 					if ( ( check.m_nCRC32 == Hdr.m_nCRC32 ) && ( check.m_pByteCode->m_abPackedCode.GetLength() == pStatic->m_abPackedCode.GetLength() ) &&
 						( memcmp( check.m_pByteCode->m_abPackedCode.GetData(), pStatic->m_abPackedCode.GetData(), check.m_pByteCode->m_abPackedCode.GetLength() ) == 0 ) )
 					{
@@ -1535,8 +1564,8 @@ static void WriteShaderFiles( const char* pShaderName )
 	const ShaderHeader_t header
 	{
 		SHADER_VCS_VERSION_NUMBER,
-		gsl::narrow<int32>( shaderInfo.m_nTotalShaderCombos ),
-		gsl::narrow<int32>( shaderInfo.m_nDynamicCombos ),
+		gsl::narrow_cast<int32>( shaderInfo.m_nTotalShaderCombos ),	// this is not actually used in vertexshaderdx8.cpp for combo checking
+		gsl::narrow<int32>( shaderInfo.m_nDynamicCombos ),			// this is used
 		shaderInfo.m_Flags,
 		shaderInfo.m_CentroidMask,
 		gsl::narrow<uint32>( StaticComboHeaders.size() ),
@@ -1602,8 +1631,8 @@ static DWORD gFlags = 0;
 static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEntry, uint64 nComboOfEntry, CUtlBuffer& pBuf )
 {
 	GLOBAL_DATA_MTX_LOCK();
-	CStaticCombo* pStComboRec = StaticComboFromDict( pEntry->m_szName, nComboOfEntry );
-	StaticComboNodeHash_t* pByteCodeArray = g_ShaderByteCode[pEntry->m_szName];
+		CStaticCombo* pStComboRec = StaticComboFromDict( pEntry->m_szName, nComboOfEntry );
+		StaticComboNodeHash_t* pByteCodeArray = g_ShaderByteCode[pEntry->m_szName];
 	GLOBAL_DATA_MTX_UNLOCK();
 
 	size_t nBytesWritten = 0;
@@ -1614,35 +1643,45 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 
 		pStComboRec->SortDynamicCombos();
 		// iterate over all dynamic combos.
-		for ( size_t i = 0; i < pStComboRec->m_DynamicCombos.size(); i++ )
+		for ( auto& combo : pStComboRec->m_DynamicCombos )
 		{
-			CByteCodeBlock* pCode = pStComboRec->m_DynamicCombos[i].get();
+			CByteCodeBlock* pCode = combo.get();
 			// check if we have already output an identical combo
-			OutputDynamicCombo( nBytesWritten, ubDynamicComboBuffer,
-								pBuf, pCode->m_nComboID,
+			OutputDynamicCombo( nBytesWritten, ubDynamicComboBuffer, pBuf, pCode->m_nComboID,
 								gsl::narrow<uint32>( pCode->m_nCodeSize ), pCode->m_ByteCode );
 		}
 		FlushCombos( nBytesWritten, ubDynamicComboBuffer, pBuf );
 	}
 
 	// Time to limit amount of prints
-	static float s_fLastInfoTime = 0;
-	const float fCurTime = static_cast<float>( Plat::FloatTime() );
+	thread_local static double s_fLastInfoTime = 0;
+	thread_local static uint64 s_nLastEntry = nComboOfEntry;
+	thread_local static CUtlMovingAverage<uint64, 64> s_averageProcess;
+	thread_local static const char* s_lastShader = pEntry->m_szName;
+	const double fCurTime = Plat::FloatTime();
 
 	GLOBAL_DATA_MTX_LOCK();
 	if ( pStComboRec )
 		pByteCodeArray->DeleteByKey( nComboOfEntry );
-	if ( fabs( fCurTime - s_fLastInfoTime ) > 1.f )
+	if ( fabs( fCurTime - s_fLastInfoTime ) > 1.0 )
 	{
-		std::cout << "\rCompiling  " << clr::green << pEntry->m_szName << clr::reset << " [ " << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining ]...         \r";
+		if ( s_lastShader != pEntry->m_szName )
+		{
+			s_averageProcess.Reset();
+			s_lastShader = pEntry->m_szName;
+			s_nLastEntry = nComboOfEntry;
+		}
+
+		s_averageProcess.PushValue( s_nLastEntry - nComboOfEntry );
+		s_nLastEntry = nComboOfEntry;
+		std::cout << "\rCompiling " << clr::green << pEntry->m_szName << clr::reset << " [ " << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining ("
+			<< clr::green2 << s_averageProcess.GetAverage() << clr::reset << " c/s) ] " << FormatTimeShort( static_cast<uint64>( fCurTime - g_flStartTime ) ) << " elapsed         \r";
 		s_fLastInfoTime = fCurTime;
 	}
 	GLOBAL_DATA_MTX_UNLOCK();
 
 	return nBytesWritten;
 }
-
-#include <thread>
 
 template <typename TMutexType>
 class CWorkerAccumState
@@ -1863,7 +1902,7 @@ void CWorkerAccumState<TMutexType>::PrepareSubProcess( SubProcess** ppSp, SubPro
 		}
 		else
 		{
-			pSp->pThread = new std::thread( ShaderCompile_Subprocess_Main, std::string( chBaseNameBuffer ), gFlags );
+			pSp->pThread = new std::thread( ShaderCompile_Subprocess_Main, std::string( chBaseNameBuffer ), gFlags, true );
 		}
 
 		m_pMutex->Lock();
@@ -1966,7 +2005,7 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 
 	// Process listing even if the shader succeeds for warnings
 	const char* szListing = pResponse->GetListing();
-	if ( ( !g_bSuppressWarnings && szListing ) || !pResponse->Succeeded() )
+	if ( szListing || !pResponse->Succeeded() )
 	{
 		char chCommandNumber[50];
 		sprintf_s( chCommandNumber, "%I64u", iCommandNumber );
@@ -1974,19 +2013,15 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 		char chUnreportedListing[0xFF];
 		if ( !szListing )
 		{
-			sprintf_s( chUnreportedListing, "(0): error 0000: Compiler failed without error description, latest version of fxc.exe might give a description. Command number %s", chCommandNumber );
+			sprintf_s( chUnreportedListing, "(%s): error 0000: Compiler failed without error description. Command number %s", pEntryInfo->m_szShaderFileName, chCommandNumber );
 			szListing = chUnreportedListing;
 		}
 
-		// Send the listing for dispatch
-		std::string errMsg( strlen( chCommandNumber ) + 1 +			// command + newline
-			strlen( szListing ) + 1 +				// listing + newline
-			1, '\0' );
-
-		sprintf_s( errMsg.data(), errMsg.length(), "%s\n%s\n", chCommandNumber, szListing );
+		char chBuffer[4096];
+		Combo_FormatCommand( hCombo, chBuffer );
 
 		GLOBAL_DATA_MTX_LOCK();
-			ErrMsgDispatchInt( errMsg.data(), pEntryInfo->m_szShaderFileName );
+			ErrMsgDispatchMsgLine( chBuffer, szListing );
 		GLOBAL_DATA_MTX_UNLOCK();
 	}
 
@@ -2501,30 +2536,6 @@ static LONG __stdcall ToolsExceptionFilter( struct _EXCEPTION_POINTERS* Exceptio
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 
-static void __FormatTime( std::ios_base& s, uint64 nInputSeconds )
-{
-	uint64 nMinutes = nInputSeconds / 60;
-	const uint64 nSeconds = nInputSeconds - nMinutes * 60;
-	const uint64 nHours = nMinutes / 60;
-	nMinutes -= nHours * 60;
-
-	const char* extra[2] = { "", "s" };
-
-	auto& str = dynamic_cast<std::ostream&>( s );
-	if ( nHours > 0 )
-		str << clr::green << nHours << clr::reset << " hour" << extra[nHours != 1] << ", " << clr::green << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
-	else if ( nMinutes > 0 )
-		str << clr::green << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
-	else
-		str << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
-}
-
-static std::_Smanip<uint64> FormatTime( uint64 i )
-{
-	return { __FormatTime, i };
-}
-
-
 
 static int ShaderCompile_Main( int argc, const char* argv[] )
 {
@@ -2550,7 +2561,7 @@ static int ShaderCompile_Main( int argc, const char* argv[] )
 	cmdLine.add( "0", false, 1, 0, "Number of threads used, defaults to core count", "-threads", "/threads" );
 	cmdLine.add( "", true, 1, 0, "Base path for shaders", "-shaderpath" );
 	cmdLine.add( "", false, 1, 0, " ", "-subprocess" );
-	cmdLine.add( "", false, 0, 0, " ", "-local" );
+	cmdLine.add( "", false, 0, 0, "Do not spawn any child subprocess", "-local" );
 
 	cmdLine.parse( argc, argv );
 
@@ -2588,7 +2599,7 @@ static int ShaderCompile_Main( int argc, const char* argv[] )
 	{
 		std::string subprocess;
 		cmdLine.get( "-subprocess" )->getString( subprocess );
-		return ShaderCompile_Subprocess_Main( subprocess, gFlags );
+		return ShaderCompile_Subprocess_Main( subprocess, gFlags, false );
 	}
 
 	std::vector<std::string> badOptions;
@@ -2639,13 +2650,28 @@ static int ShaderCompile_Main( int argc, const char* argv[] )
 		//
 		//////////////////////////////////////////////////////////////////////////
 
+		if ( const int warnings = g_Master_CompilerMsgWarning.GetNumStrings() )
+			std::cout << clr::yellow << warnings << "WARNINGS:" << clr::reset << std::endl;
+
+		for ( int k = 0, kEnd = g_Master_CompilerMsgWarning.GetNumStrings(); k < kEnd; ++k )
+		{
+			const char* const szMsg = g_Master_CompilerMsgError.String( k );
+			const CompilerMsgInfo& cmi = g_Master_CompilerMsgError[gsl::narrow<UtlSymId_t>( k )];
+			const int numReported = cmi.GetNumTimesReported();
+
+			std::cout << std::quoted( szMsg ) << " Reported " << clr::green << numReported << clr::reset << " time(s): " << szMsg << std::endl;
+		}
+
+		if ( const int errors = g_Master_CompilerMsgError.GetNumStrings() )
+			std::cout << clr::red << errors << "WARNINGS:" << clr::reset << std::endl;
+
 		const bool bValveVerboseComboErrors = cmdLine.isSet( "-verbose_errors" );
 
 		// Compiler spew
-		for ( int k = 0, kEnd = g_Master_CompilerMsgInfo.GetNumStrings(); k < kEnd; ++k )
+		for ( int k = 0, kEnd = g_Master_CompilerMsgError.GetNumStrings(); k < kEnd; ++k )
 		{
-			const char* const szMsg = g_Master_CompilerMsgInfo.String( k );
-			const CompilerMsgInfo& cmi = g_Master_CompilerMsgInfo[gsl::narrow<UtlSymId_t>( k )];
+			const char* const szMsg = g_Master_CompilerMsgError.String( k );
+			const CompilerMsgInfo& cmi = g_Master_CompilerMsgError[gsl::narrow<UtlSymId_t>( k )];
 
 			const char* const szFirstCmd = cmi.GetFirstCommand();
 			const int numReported = cmi.GetNumTimesReported();

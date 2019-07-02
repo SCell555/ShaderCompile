@@ -112,7 +112,7 @@ namespace InterceptFxc
 
 	namespace Private
 	{
-		struct DxIncludeImpl : public ID3DInclude
+		struct DxIncludeImpl final : public ID3DInclude
 		{
 			STDMETHOD( Open )( THIS_ D3D_INCLUDE_TYPE, LPCSTR pFileName, LPCVOID, LPCVOID* ppData, UINT* pBytes ) override
 			{
@@ -153,13 +153,12 @@ namespace InterceptFxc
 		//
 		// Response implementation
 		//
-		class CResponse : public CmdSink::IResponse
+		class CResponse final : public CmdSink::IResponse
 		{
 		public:
 			explicit CResponse( ID3DBlob* pShader, ID3DBlob* pListing, HRESULT hr );
 			~CResponse() override;
 
-		public:
 			bool Succeeded() override { return m_pShader && m_hr == S_OK; }
 			size_t GetResultBufferLen() override { return Succeeded() ? m_pShader->GetBufferSize() : 0; }
 			const void* GetResultBuffer() override { return Succeeded() ? m_pShader->GetBufferPointer() : nullptr; }

@@ -217,10 +217,11 @@ static LONG __stdcall ShaderCompile_Subprocess_ExceptionHandler( struct _EXCEPTI
 	return EXCEPTION_EXECUTE_HANDLER; // (never gets here anyway)
 }
 
-int ShaderCompile_Subprocess_Main( std::string szSubProcessData, DWORD flags )
+int ShaderCompile_Subprocess_Main( std::string szSubProcessData, DWORD flags, bool local )
 {
 	// Set our crash handler
-	SetUnhandledExceptionFilter( ShaderCompile_Subprocess_ExceptionHandler );
+	if ( !local )
+		SetUnhandledExceptionFilter( ShaderCompile_Subprocess_ExceptionHandler );
 
 	// Get our kernel objects
 	SubProcessKernelObjects_Open objs( szSubProcessData.c_str() );
