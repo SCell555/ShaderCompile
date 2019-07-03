@@ -1656,7 +1656,7 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 	// Time to limit amount of prints
 	thread_local static double s_fLastInfoTime = 0;
 	thread_local static uint64 s_nLastEntry = nComboOfEntry;
-	thread_local static CUtlMovingAverage<uint64, 64> s_averageProcess;
+	thread_local static CUtlMovingAverage<uint64, 60> s_averageProcess;
 	thread_local static const char* s_lastShader = pEntry->m_szName;
 	const double fCurTime = Plat::FloatTime();
 
@@ -1675,7 +1675,7 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 		s_averageProcess.PushValue( s_nLastEntry - nComboOfEntry );
 		s_nLastEntry = nComboOfEntry;
 		std::cout << "\rCompiling " << clr::green << pEntry->m_szName << clr::reset << " [ " << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining ("
-			<< clr::green2 << s_averageProcess.GetAverage() << clr::reset << " c/s) ] " << FormatTimeShort( static_cast<uint64>( fCurTime - g_flStartTime ) ) << " elapsed         \r";
+			<< clr::green2 << s_averageProcess.GetAverage() << clr::reset << " c/m) ] " << FormatTimeShort( static_cast<uint64>( fCurTime - g_flStartTime ) ) << " elapsed         \r";
 		s_fLastInfoTime = fCurTime;
 	}
 	GLOBAL_DATA_MTX_UNLOCK();
@@ -2069,7 +2069,7 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64 iCommandNumber )
 	uint64 nComboBegin = Combo_GetComboNum( hChBegin ) / pInfoBegin->m_numDynamicCombos;
 	const uint64 nComboEnd = Combo_GetComboNum( hChEnd ) / pInfoEnd->m_numDynamicCombos;
 
-	for ( ; pInfoBegin && ( ( pInfoBegin->m_iCommandStart < pInfoEnd->m_iCommandStart ) || ( nComboBegin > nComboEnd ) ); )
+	for ( ; pInfoBegin && ( pInfoBegin->m_iCommandStart < pInfoEnd->m_iCommandStart || nComboBegin > nComboEnd ); )
 	{
 		// Zip this combo
 		CUtlBuffer mbPacked;
@@ -2129,8 +2129,8 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 			else
 			{
 				Combo_Free( hThreadCombo );
-				iThreadCommand = ~uint64(0);
-				pSp->iRunningCommand = ~uint64(0);
+				iThreadCommand = ~uint64( 0 );
+				pSp->iRunningCommand = ~uint64( 0 );
 			}
 		m_pMutex->Unlock();
 
@@ -2651,19 +2651,19 @@ static int ShaderCompile_Main( int argc, const char* argv[] )
 		//////////////////////////////////////////////////////////////////////////
 
 		if ( const int warnings = g_Master_CompilerMsgWarning.GetNumStrings() )
-			std::cout << clr::yellow << warnings << "WARNINGS:" << clr::reset << std::endl;
+			std::cout << clr::yellow << warnings << " WARNING(S):" << clr::reset << std::endl;
 
 		for ( int k = 0, kEnd = g_Master_CompilerMsgWarning.GetNumStrings(); k < kEnd; ++k )
 		{
-			const char* const szMsg = g_Master_CompilerMsgError.String( k );
-			const CompilerMsgInfo& cmi = g_Master_CompilerMsgError[gsl::narrow<UtlSymId_t>( k )];
+			const char* const szMsg = g_Master_CompilerMsgWarning.String( k );
+			const CompilerMsgInfo& cmi = g_Master_CompilerMsgWarning[gsl::narrow<UtlSymId_t>( k )];
 			const int numReported = cmi.GetNumTimesReported();
 
 			std::cout << std::quoted( szMsg ) << " Reported " << clr::green << numReported << clr::reset << " time(s): " << szMsg << std::endl;
 		}
 
 		if ( const int errors = g_Master_CompilerMsgError.GetNumStrings() )
-			std::cout << clr::red << errors << "WARNINGS:" << clr::reset << std::endl;
+			std::cout << clr::red << errors << " ERROR(S):" << clr::reset << std::endl;
 
 		const bool bValveVerboseComboErrors = cmdLine.isSet( "-verbose_errors" );
 
@@ -2767,13 +2767,5 @@ static int ShaderCompile_Main( int argc, const char* argv[] )
 
 int main( int argc, const char* argv[] )
 {
-	try
-	{
-		return ShaderCompile_Main( argc, argv );
-	}
-	catch ( const std::exception& e )
-	{
-		std::cout << "Exception occured: "  << clr::red<< e.what() << clr::reset << std::endl;
-		return -1;
-	}
+	return ShaderCompile_Main( argc, argv );
 }

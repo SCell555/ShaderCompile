@@ -106,9 +106,9 @@ void SubProcessKernelObjects::Close()
 void* SubProcessKernelObjects_Memory::Lock()
 {
 	// Wait for our turn to act
-	for ( unsigned iWaitAttempt = 0; iWaitAttempt < 13u; ++ iWaitAttempt )
+	for ( unsigned iWaitAttempt = 0; iWaitAttempt < 15u; ++ iWaitAttempt )
 	{
-		const DWORD dwWait = ::WaitForSingleObject( m_pObjs->m_hEvent[m_pObjs->m_dwCookie], 10000 );
+		const DWORD dwWait = ::WaitForSingleObject( m_pObjs->m_hEvent[m_pObjs->m_dwCookie], 15000 );
 		switch ( dwWait )
 		{
 		case WAIT_OBJECT_0:

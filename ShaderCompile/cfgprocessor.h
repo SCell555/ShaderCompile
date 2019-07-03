@@ -69,7 +69,6 @@ namespace CfgProcessor
 	ComboHandle Combo_Alloc( ComboHandle hComboCopyFrom );
 	void Combo_Assign( ComboHandle hComboDst, ComboHandle hComboSrc );
 	void Combo_Free( ComboHandle& rhComboFree );
-
 }; // namespace CfgProcessor
 
 
