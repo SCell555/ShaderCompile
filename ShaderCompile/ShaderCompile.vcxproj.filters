@@ -79,6 +79,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <Natvis Include="include\gsl\GSL.natvis" />
+    <Natvis Include="..\shared\gsl\GSL.natvis" />
   </ItemGroup>
 </Project>

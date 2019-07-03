@@ -197,7 +197,7 @@
     <ClInclude Include="utlsymbol.h" />
   </ItemGroup>
   <ItemGroup>
-    <Natvis Include="include\gsl\GSL.natvis" />
+    <Natvis Include="..\shared\gsl\GSL.natvis" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
