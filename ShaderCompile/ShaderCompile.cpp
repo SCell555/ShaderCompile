@@ -568,7 +568,7 @@ struct CByteCodeBlock
 		m_nComboID = nComboID;
 		m_nCodeSize = nCodeSize;
 		memcpy( m_ByteCode, pByteCode, nCodeSize );
-		m_nCRC32 = CRC32::ProcessSingleBuffer( pByteCode, nCodeSize );
+		m_nCRC32 = CRC32::ProcessSingleBuffer( m_ByteCode, m_nCodeSize );
 	}
 
 	~CByteCodeBlock()
@@ -1994,9 +1994,7 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 		StaticComboFromDictAdd( pEntryInfo->m_szName, nStComboIdx )->AddDynamicCombo( nDyComboIdx , pResponse->GetResultBuffer(), pResponse->GetResultBufferLen() );
 		GLOBAL_DATA_MTX_UNLOCK();
 	}
-
-	// Tell the master that this shader failed
-	if ( !pResponse->Succeeded() )
+	else // Tell the master that this shader failed
 	{
 		GLOBAL_DATA_MTX_LOCK();
 			ShaderHadErrorDispatchInt( pEntryInfo->m_szName );
@@ -2024,6 +2022,8 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 			ErrMsgDispatchMsgLine( chBuffer, szListing );
 		GLOBAL_DATA_MTX_UNLOCK();
 	}
+
+	pResponse->Release();
 
 	// Maybe zip things up
 	TryToPackageData( iCommandNumber );
@@ -2463,7 +2463,7 @@ static void CompileShaders_NoVMPI()
 		g_numCommandsCompleted = pEntry->m_iCommandEnd;
 	}
 
-	std::cout << "\r                                                  \r";
+	std::cout << "\r                                                                                           \r";
 }
 
 static bool WriteMiniDumpUsingExceptionInfo( _EXCEPTION_POINTERS* pExceptionInfo, MINIDUMP_TYPE minidumpType )
@@ -2651,7 +2651,7 @@ static int ShaderCompile_Main( int argc, const char* argv[] )
 		//////////////////////////////////////////////////////////////////////////
 
 		if ( const int warnings = g_Master_CompilerMsgWarning.GetNumStrings() )
-			std::cout << clr::yellow << warnings << " WARNING(S):" << clr::reset << std::endl;
+			std::cout << clr::yellow << warnings << " WARNING(S):                                                         " << clr::reset << std::endl;
 
 		for ( int k = 0, kEnd = g_Master_CompilerMsgWarning.GetNumStrings(); k < kEnd; ++k )
 		{
@@ -2663,7 +2663,7 @@ static int ShaderCompile_Main( int argc, const char* argv[] )
 		}
 
 		if ( const int errors = g_Master_CompilerMsgError.GetNumStrings() )
-			std::cout << clr::red << errors << " ERROR(S):" << clr::reset << std::endl;
+			std::cout << clr::red << errors << " ERROR(S):                                                               " << clr::reset << std::endl;
 
 		const bool bValveVerboseComboErrors = cmdLine.isSet( "-verbose_errors" );
 
@@ -2759,7 +2759,7 @@ static int ShaderCompile_Main( int argc, const char* argv[] )
 		//
 		const double end = Plat::FloatTime();
 
-		std::cout << clr::green << FormatTime( static_cast<uint64>( end - g_flStartTime ) ) << clr::reset << " elapsed" << std::endl;
+		std::cout << clr::green << FormatTime( static_cast<uint64>( end - g_flStartTime ) ) << clr::reset << " elapsed                                           " << std::endl;
 	}
 
 	return g_Master_ShaderHadError.GetNumStrings();

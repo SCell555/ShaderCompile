@@ -274,6 +274,8 @@ int ShaderCompile_Subprocess_Main( std::string szSubProcessData, DWORD flags, bo
 				while ( 0 != ( *pBytes++ = *szListing++ ) ) continue;
 			else
 				*pBytes++ = 0;
+
+			pResponse->Release();
 		}
 		else
 		{
