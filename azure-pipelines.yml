@@ -1,0 +1,26 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- master
+
+pool:
+  vmImage: 'windows-2019'
+
+steps:
+ - checkout: self
+   submodules: true
+ - task: VSBuild@1
+   inputs:
+     solution: ShaderCompile.sln
+     configuration: Release
+     platform: x64
+ - task: CopyFiles@2
+   inputs:
+     Contents: 'x64\Release\*.exe'
+     TargetFolder: $(Build.ArtifactStagingDirectory)
+ - task: PublishPipelineArtifact@1
+   inputs:
+     targetPath: $(Build.ArtifactStagingDirectory)
