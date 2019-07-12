@@ -278,6 +278,8 @@ public:
 	CUtlSymbolTable( int growSize = 0, int initSize = 0, bool caseInsensitive = false );
 	~CUtlSymbolTable();
 
+	CUtlSymbolTable( const CUtlSymbolTable& );
+
 	// Finds and/or creates a symbol based on the string
 	CUtlSymbol AddString( const char* pString );
 

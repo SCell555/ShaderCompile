@@ -43,6 +43,7 @@
 #include <ctime>
 #include <iomanip>
 #include <thread>
+#include <regex>
 
 extern "C" {
 #define _7ZIP_ST
@@ -691,8 +692,12 @@ protected:
 
 static CUtlStringMap<uint8> g_Master_ShaderHadError;
 static CUtlStringMap<uint8> g_Master_ShaderWrittenToDisk;
-static CUtlStringMap<CompilerMsgInfo> g_Master_CompilerMsgError;
-static CUtlStringMap<CompilerMsgInfo> g_Master_CompilerMsgWarning;
+struct CompilerMsg
+{
+	CUtlStringMap<CompilerMsgInfo> warning;
+	CUtlStringMap<CompilerMsgInfo> error;
+};
+static CUtlStringMap<CompilerMsg> g_Master_CompilerMsg;
 
 namespace Threading
 {
@@ -1267,13 +1272,14 @@ static char* FindLast( char* szString, const char* szSearchSet )
 	return bFound ? szNext : nullptr;
 }
 
-static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine )
+static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine, const char* szName )
 {
+	auto& msg = g_Master_CompilerMsg[szName];
 	// Now store the message with the command it was generated from
 	if ( strstr( szMsgLine, "warning X" ) )
-		g_Master_CompilerMsgWarning[szMsgLine].SetMsgReportedCommand( szCommand );
+		msg.warning[szMsgLine].SetMsgReportedCommand( szCommand );
 	else
-		g_Master_CompilerMsgError[szMsgLine].SetMsgReportedCommand( szCommand );
+		msg.error[szMsgLine].SetMsgReportedCommand( szCommand );
 }
 
 static void ShaderHadErrorDispatchInt( const char* szShader )
@@ -2019,7 +2025,7 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 		Combo_FormatCommand( hCombo, chBuffer );
 
 		GLOBAL_DATA_MTX_LOCK();
-			ErrMsgDispatchMsgLine( chBuffer, szListing );
+			ErrMsgDispatchMsgLine( chBuffer, szListing, pEntryInfo->m_szName );
 		GLOBAL_DATA_MTX_UNLOCK();
 	}
 
@@ -2650,98 +2656,120 @@ static int ShaderCompile_Main( int argc, const char* argv[] )
 		//
 		//////////////////////////////////////////////////////////////////////////
 
-		if ( const int warnings = g_Master_CompilerMsgWarning.GetNumStrings() )
-			std::cout << clr::yellow << warnings << " WARNING(S):                                                         " << clr::reset << std::endl;
-
-		for ( int k = 0, kEnd = g_Master_CompilerMsgWarning.GetNumStrings(); k < kEnd; ++k )
-		{
-			const char* const szMsg = g_Master_CompilerMsgWarning.String( k );
-			const CompilerMsgInfo& cmi = g_Master_CompilerMsgWarning[gsl::narrow<UtlSymId_t>( k )];
-			const int numReported = cmi.GetNumTimesReported();
-
-			std::cout << std::quoted( szMsg ) << " Reported " << clr::green << numReported << clr::reset << " time(s): " << szMsg << std::endl;
-		}
-
-		if ( const int errors = g_Master_CompilerMsgError.GetNumStrings() )
-			std::cout << clr::red << errors << " ERROR(S):                                                               " << clr::reset << std::endl;
-
 		const bool bValveVerboseComboErrors = cmdLine.isSet( "-verbose_errors" );
-
-		// Compiler spew
-		for ( int k = 0, kEnd = g_Master_CompilerMsgError.GetNumStrings(); k < kEnd; ++k )
+		if ( const int numShaderMsgs = g_Master_CompilerMsg.GetNumStrings() )
 		{
-			const char* const szMsg = g_Master_CompilerMsgError.String( k );
-			const CompilerMsgInfo& cmi = g_Master_CompilerMsgError[gsl::narrow<UtlSymId_t>( k )];
-
-			const char* const szFirstCmd = cmi.GetFirstCommand();
-			const int numReported = cmi.GetNumTimesReported();
-
-			uint64 iFirstCommand = _strtoui64( szFirstCmd, nullptr, 10 );
-			CfgProcessor::ComboHandle hCombo = nullptr;
-			const CfgProcessor::CfgEntryInfo* pComboEntryInfo = nullptr;
-			if ( CfgProcessor::Combo_GetNext( iFirstCommand, hCombo, g_numCompileCommands ) )
+			int totalWarnings = 0, totalErrors = 0;
+			g_Master_CompilerMsg.ForEach( [&totalWarnings, &totalErrors]( const CompilerMsg& msg )
 			{
-				Combo_FormatCommand( hCombo, str );
-				pComboEntryInfo = Combo_GetEntryInfo( hCombo );
-				Combo_Free( hCombo );
-			}
-			else
-				sprintf_s( str, "cmd # %s", szFirstCmd );
+				totalWarnings += msg.warning.GetNumStrings();
+				totalErrors += msg.error.GetNumStrings();
+			} );
+			std::cout << clr::yellow << "WARNINGS" << clr::reset << "/" << clr::red << "ERRORS " << clr::reset << totalWarnings << "/" << totalErrors << std::endl;
 
-			std::cout << std::quoted( szMsg ) << " Reported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
-
-			if ( bValveVerboseComboErrors )
+			const auto& trim = []( const char* str ) -> std::string
 			{
-				std::cout << "    Verbose Description:\n";
-				if ( pComboEntryInfo )
+				std::string s( str );
+				s.erase( std::find_if( s.rbegin(), s.rend(), []( int ch ) { return !std::isspace( ch ); } ).base(), s.end() );
+				return s;
+			};
+			const std::regex cmdReplaceReg( "( /nologo /Foshader.o|>output.txt 2>&1)" );
+			char cwd[_MAX_PATH];
+			_getcwd( cwd, sizeof( cwd ) );
+			const size_t cwdLen = strlen( cwd ) + 1;
+
+			for ( int i = 0; i < numShaderMsgs; i++ )
+			{
+				const auto& msg = g_Master_CompilerMsg[gsl::narrow<UtlSymId_t>( i )];
+				const char* const shaderName = g_Master_CompilerMsg.String( i );
+
+				if ( const int warnings = msg.warning.GetNumStrings() )
+					std::cout << shaderName << " " << clr::yellow << warnings << " WARNING(S):                                                         " << clr::reset << std::endl;
+
+				for ( int k = 0, kEnd = msg.warning.GetNumStrings(); k < kEnd; ++k )
 				{
-					std::cout << "        Src File: " << clr::green << pComboEntryInfo->m_szShaderFileName << clr::reset << "\n";
-					std::cout << "        Tgt File: " << clr::green << pComboEntryInfo->m_szName << clr::reset << "\n";
+					const char* const szMsg = msg.warning.String( k );
+					const CompilerMsgInfo& cmi = msg.warning[gsl::narrow<UtlSymId_t>( k )];
+					const int numReported = cmi.GetNumTimesReported();
+
+					std::string m = trim( szMsg );
+					const size_t find = m.find( cwd );
+					std::cout << std::quoted( find != std::string::npos ? m.replace( find, cwdLen, "" ) : m ) << "\nReported " << clr::green << numReported << clr::reset << " time(s)" << std::endl;
 				}
 
-				// Between     /DSHADERCOMBO=   and    /Dmain
-				const char* pBegin = strstr( str, "/DSHADERCOMBO=" );
-				const char* pEnd = strstr( str, "/Dmain" );
-				if ( pBegin )
+				if ( const int errors = msg.error.GetNumStrings() )
+					std::cout << shaderName << " " << clr::red << errors << " ERROR(S):                                                               " << clr::reset << std::endl;
+
+				// Compiler spew
+				for ( int k = 0, kEnd = msg.error.GetNumStrings(); k < kEnd; ++k )
 				{
-					pBegin += strlen( "/DSHADERCOMBO=" ) ;
-					const char* pSpace = strchr( pBegin, ' ' );
-					if ( pSpace )
+					const char* const szMsg = msg.error.String( k );
+					const CompilerMsgInfo& cmi = msg.error[gsl::narrow<UtlSymId_t>( k )];
+
+					const char* const szFirstCmd = cmi.GetFirstCommand();
+					const int numReported = cmi.GetNumTimesReported();
+
+					uint64 iFirstCommand = _strtoui64( szFirstCmd, nullptr, 10 );
+					CfgProcessor::ComboHandle hCombo = nullptr;
+					if ( CfgProcessor::Combo_GetNext( iFirstCommand, hCombo, g_numCompileCommands ) )
 					{
-						std::cout << "        Combo # : "<< clr::green << PrettyPrint( strtoull( pBegin, nullptr, 16 ) ) << clr::reset << std::endl;
+						Combo_FormatCommand( hCombo, str );
+						Combo_Free( hCombo );
 					}
+					else
+						sprintf_s( str, "cmd # %s", szFirstCmd );
+
+					std::string m = trim( szMsg );
+					const size_t find = m.find( cwd );
+					std::cout << std::quoted( find != std::string::npos ? m.replace( find, cwdLen, "" ) : m ) << "\nReported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
+
+					if ( bValveVerboseComboErrors )
+					{
+						std::cout << "    Verbose Description:\n";
+
+						// Between     /DSHADERCOMBO=   and    /Dmain
+						const char* pBegin = strstr( str, "/DSHADERCOMBO=" );
+						const char* pEnd = strstr( str, "/Dmain" );
+						if ( pBegin )
+						{
+							pBegin += strlen( "/DSHADERCOMBO=" );
+							const char* pSpace = strchr( pBegin, ' ' );
+							if ( pSpace )
+								std::cout << "        Combo # : " << clr::green << PrettyPrint( strtoull( pBegin, nullptr, 16 ) ) << clr::reset << std::endl;
+						}
+
+						if ( !pEnd )
+							pEnd = str + strlen( str );
+						while ( pBegin && *pBegin && !isspace( *pBegin ) )
+							++pBegin;
+						while ( pBegin && *pBegin && isspace( *pBegin ) )
+							++pBegin;
+
+						// Now parse all combo defines in [pBegin, pEnd]
+						while ( pBegin && *pBegin && ( pBegin < pEnd ) )
+						{
+							const char* pDefine = strstr( pBegin, "/D" );
+							if ( !pDefine || pDefine >= pEnd )
+								break;
+
+							const char* pEqSign = strchr( pDefine, '=' );
+							if ( !pEqSign || pEqSign >= pEnd )
+								break;
+
+							const char* pSpace = strchr( pEqSign, ' ' );
+							if ( !pSpace || pSpace >= pEnd )
+								pSpace = pEnd;
+
+							pBegin = pSpace;
+
+							std::cout << "                  " << clr::pinkish << std::string( pEqSign + 1, pSpace - pEqSign - 1 ) << " " << clr::red << std::string( pDefine + 2, pEqSign - pDefine - 2 ) << std::endl;
+						}
+						std::cout << clr::reset;
+					}
+
+					std::cout << "    " << clr::green << std::regex_replace( str, cmdReplaceReg, "" ) << clr::reset << std::endl;
 				}
-
-				if ( !pEnd )
-					pEnd = str + strlen( str );
-				while ( pBegin && *pBegin && !isspace( *pBegin ) )
-					++pBegin;
-				while ( pBegin && *pBegin && isspace( *pBegin ) )
-					++pBegin;
-
-				// Now parse all combo defines in [pBegin, pEnd]
-				while ( pBegin && *pBegin && ( pBegin < pEnd ) )
-				{
-					const char *pDefine = strstr( pBegin, "/D" );
-					if ( !pDefine || pDefine >= pEnd )
-						break;
-
-					const char* pEqSign = strchr( pDefine, '=' );
-					if ( !pEqSign || pEqSign >= pEnd )
-						break;
-
-					const char* pSpace = strchr( pEqSign, ' ' );
-					if ( !pSpace || pSpace >= pEnd )
-						pSpace = pEnd;
-
-					pBegin = pSpace;
-
-					std::cout << "                  " << clr::pinkish << std::string( pEqSign + 1 ).substr( 0, pSpace - pEqSign - 1 ) << " " << clr::red << std::string( pDefine + 2 ).substr( 0, pEqSign - pDefine - 2 ) << std::endl;
-				}
-				std::cout << clr::reset;
 			}
-
-			std::cout << "    " << clr::green << str << clr::reset << std::endl;
 		}
 
 		// Failed shaders summary

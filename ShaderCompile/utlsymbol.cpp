@@ -28,13 +28,13 @@ inline const char* CUtlSymbolTable::StringFromIndex( const CStringPoolIndex &ind
 }
 
 
-bool CUtlSymbolTable::CLess::operator()( void* ctx, const CStringPoolIndex &i1, const CStringPoolIndex &i2 ) const
+bool CUtlSymbolTable::CLess::operator()( void* ctx, const CStringPoolIndex& i1, const CStringPoolIndex& i2 ) const
 {
 	CUtlSymbolTable* pTable = static_cast<CUtlSymbolTable*>( ctx );
-	const char* str1 = (i1 == INVALID_STRING_INDEX) ? pTable->m_pUserSearchString :
-													  pTable->StringFromIndex( i1 );
-	const char* str2 = (i2 == INVALID_STRING_INDEX) ? pTable->m_pUserSearchString :
-													  pTable->StringFromIndex( i2 );
+	const char* str1 = i1 == INVALID_STRING_INDEX ? pTable->m_pUserSearchString :
+													pTable->StringFromIndex( i1 );
+	const char* str2 = i2 == INVALID_STRING_INDEX ? pTable->m_pUserSearchString :
+													pTable->StringFromIndex( i2 );
 
 	if ( !str1 && str2 )
 		return false;
@@ -56,12 +56,28 @@ CUtlSymbolTable::CUtlSymbolTable( int growSize, int initSize, bool caseInsensiti
 {
 }
 
+CUtlSymbolTable::CUtlSymbolTable( const CUtlSymbolTable& other )
+{
+	m_Lookup.CopyFrom( other.m_Lookup );
+	m_Lookup.SetContext( this );
+	m_bInsensitive = other.m_bInsensitive;
+	m_StringPools.reserve( other.m_StringPools.size() );
+	for ( size_t i = 0; i < other.m_StringPools.size(); ++i )
+	{
+		const auto& pool = other.m_StringPools[i];
+		auto& pool2 = m_StringPools[i];
+		pool2 = static_cast<StringPool_t*>( malloc( sizeof( StringPool_t ) + pool->m_TotalLen - 1 ) );
+		pool2->m_TotalLen = pool->m_TotalLen;
+		pool2->m_SpaceUsed = pool->m_SpaceUsed;
+		memcpy( pool2->m_Data, pool->m_Data, pool->m_TotalLen );
+	}
+}
+
 CUtlSymbolTable::~CUtlSymbolTable()
 {
 	// Release the stringpool string data
 	RemoveAll();
 }
-
 
 CUtlSymbol CUtlSymbolTable::Find( const char* pString ) const
 {

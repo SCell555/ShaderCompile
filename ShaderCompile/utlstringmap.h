@@ -68,6 +68,12 @@ public:
 		return m_SymbolTable.String( n );
 	}
 
+	template <typename F>
+	void ForEach( F&& functor ) const
+	{
+		std::for_each( m_Vector.begin(), m_Vector.end(), std::forward<F>( functor ) );
+	}
+
 	// Clear all of the data from the map
 	void Clear()
 	{
