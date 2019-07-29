@@ -9,7 +9,7 @@
 #ifndef CMDSINK_H
 #define CMDSINK_H
 #ifdef _WIN32
-#pragma once
+	#pragma once
 #endif
 
 namespace CmdSink
@@ -48,7 +48,7 @@ Response implementation when the result is a generic error.
 class CResponseError final : public IResponse
 {
 public:
-	explicit CResponseError() = default;
+	explicit CResponseError()  = default;
 	~CResponseError() override = default;
 
 	bool Succeeded() override { return false; }
@@ -60,6 +60,5 @@ public:
 };
 
 }; // namespace CmdSink
-
 
 #endif // #ifndef CMDSINK_H

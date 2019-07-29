@@ -11,7 +11,7 @@
 #define UTLNODEHASH_H
 
 #ifdef _WIN32
-#pragma once
+	#pragma once
 #endif
 
 #include "utlintrusivelist.h"
@@ -22,6 +22,7 @@ template <class T, int HASHSIZE = 7907, class K = int>
 class CUtlNodeHash
 {
 	int m_nNumNodes;
+
 public:
 	CUtlIntrusiveDList<T> m_HashChains[HASHSIZE];
 
@@ -80,6 +81,5 @@ public:
 		Purge();
 	}
 };
-
 
 #endif

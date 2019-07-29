@@ -6,14 +6,14 @@
 //
 //=============================================================================//
 
-#include <windows.h>
+#include "subprocess.h"
+
 #include "basetypes.h"
 #include "cmdsink.h"
-#include <string>
-#include "subprocess.h"
 #include "d3dxfxc.h"
 #include <gsl/gsl_util>
-
+#include <string>
+#include <windows.h>
 
 //////////////////////////////////////////////////////////////////////////
 //
@@ -21,7 +21,10 @@
 //
 //////////////////////////////////////////////////////////////////////////
 
-SubProcessKernelObjects::SubProcessKernelObjects() : m_hMemorySection( nullptr ), m_hMutex( nullptr ), m_dwCookie( 0 )
+SubProcessKernelObjects::SubProcessKernelObjects()
+	: m_hMemorySection( nullptr )
+	, m_hMutex( nullptr )
+	, m_dwCookie( 0 )
 {
 	ZeroMemory( m_hEvent, sizeof( m_hEvent ) );
 }
@@ -31,7 +34,7 @@ SubProcessKernelObjects::~SubProcessKernelObjects()
 	Close();
 }
 
-BOOL SubProcessKernelObjects::Create( const char* szBaseName )
+bool SubProcessKernelObjects::Create( const char* szBaseName )
 {
 	char chBufferName[0x100] = { 0 };
 
@@ -51,7 +54,7 @@ BOOL SubProcessKernelObjects::Create( const char* szBaseName )
 	sprintf_s( chBufferName, "%s_mtx", szBaseName );
 	m_hMutex = CreateMutex( nullptr, FALSE, chBufferName );
 
-	for ( int k = 0; k < 2; ++ k )
+	for ( int k = 0; k < 2; ++k )
 	{
 		sprintf_s( chBufferName, "%s_evt%d", szBaseName, k );
 		m_hEvent[k] = CreateEvent( nullptr, FALSE, ( k ? TRUE /* = master */ : FALSE ), chBufferName );
@@ -60,7 +63,7 @@ BOOL SubProcessKernelObjects::Create( const char* szBaseName )
 	return IsValid();
 }
 
-BOOL SubProcessKernelObjects::Open( const char* szBaseName )
+bool SubProcessKernelObjects::Open( const char* szBaseName )
 {
 	char chBufferName[0x100] = { 0 };
 
@@ -70,7 +73,7 @@ BOOL SubProcessKernelObjects::Open( const char* szBaseName )
 	sprintf_s( chBufferName, "%s_mtx", szBaseName );
 	m_hMutex = OpenMutex( MUTEX_ALL_ACCESS, FALSE, chBufferName );
 
-	for ( int k = 0; k < 2; ++ k )
+	for ( int k = 0; k < 2; ++k )
 	{
 		sprintf_s( chBufferName, "%s_evt%d", szBaseName, k );
 		m_hEvent[k] = OpenEvent( EVENT_ALL_ACCESS, FALSE, chBufferName );
@@ -79,7 +82,7 @@ BOOL SubProcessKernelObjects::Open( const char* szBaseName )
 	return IsValid();
 }
 
-BOOL SubProcessKernelObjects::IsValid() const
+bool SubProcessKernelObjects::IsValid() const
 {
 	return m_hMemorySection && m_hMutex && m_hEvent[0] && m_hEvent[1];
 }
@@ -106,42 +109,42 @@ void SubProcessKernelObjects::Close()
 void* SubProcessKernelObjects_Memory::Lock()
 {
 	// Wait for our turn to act
-	for ( unsigned iWaitAttempt = 0; iWaitAttempt < 15u; ++ iWaitAttempt )
+	for ( unsigned iWaitAttempt = 0; iWaitAttempt < 15u; ++iWaitAttempt )
 	{
 		const DWORD dwWait = ::WaitForSingleObject( m_pObjs->m_hEvent[m_pObjs->m_dwCookie], 15000 );
 		switch ( dwWait )
 		{
 		case WAIT_OBJECT_0:
+		{
+			m_pLockData = MapViewOfFile( m_pObjs->m_hMemorySection, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
+			__assume( m_pLockData );
+			if ( *static_cast<const DWORD*>( m_pLockData ) != m_pObjs->m_dwCookie )
 			{
-				m_pLockData = MapViewOfFile( m_pObjs->m_hMemorySection, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
-				__assume( m_pLockData );
-				if ( *static_cast<const DWORD*>( m_pLockData ) != m_pObjs->m_dwCookie )
-				{
-					// Yes, this is our turn, set our cookie in that memory segment
-					*static_cast<DWORD*>( m_pLockData ) = m_pObjs->m_dwCookie;
-					m_pMemory = static_cast<byte*>( m_pLockData ) + 2 * sizeof( DWORD );
+				// Yes, this is our turn, set our cookie in that memory segment
+				*static_cast<DWORD*>( m_pLockData ) = m_pObjs->m_dwCookie;
+				m_pMemory                           = static_cast<byte*>( m_pLockData ) + 2 * sizeof( DWORD );
 
-					return m_pMemory;
-				}
-				else
-				{
-					// We just acted, still waiting for result
-					UnmapViewOfFile( m_pLockData );
-					m_pLockData = nullptr;
-
-					SetEvent( m_pObjs->m_hEvent[!m_pObjs->m_dwCookie] );
-					Sleep( 1 );
-
-					continue;
-				}
+				return m_pMemory;
 			}
+			else
+			{
+				// We just acted, still waiting for result
+				UnmapViewOfFile( m_pLockData );
+				m_pLockData = nullptr;
+
+				SetEvent( m_pObjs->m_hEvent[!m_pObjs->m_dwCookie] );
+				Sleep( 1 );
+
+				continue;
+			}
+		}
 
 		case WAIT_TIMEOUT:
-			{
-				char chMsg[0x100];
-				sprintf_s( chMsg, "th%08lX> WAIT_TIMEOUT in Memory::Lock (attempt %d).\n", GetCurrentThreadId(), iWaitAttempt );
-				OutputDebugString( chMsg );
-			}
+		{
+			char chMsg[0x100];
+			sprintf_s( chMsg, "th%08lX> WAIT_TIMEOUT in Memory::Lock (attempt %d).\n", GetCurrentThreadId(), iWaitAttempt );
+			OutputDebugString( chMsg );
+		}
 			continue; // retry
 
 		default:
@@ -156,7 +159,7 @@ void* SubProcessKernelObjects_Memory::Lock()
 	return nullptr;
 }
 
-BOOL SubProcessKernelObjects_Memory::Unlock()
+bool SubProcessKernelObjects_Memory::Unlock()
 {
 	if ( m_pLockData )
 	{
@@ -164,7 +167,7 @@ BOOL SubProcessKernelObjects_Memory::Unlock()
 		Assert( m_pObjs->m_dwCookie == *static_cast<const DWORD*>( m_pLockData ) );
 
 		UnmapViewOfFile( m_pLockData );
-		m_pMemory = nullptr;
+		m_pMemory   = nullptr;
 		m_pLockData = nullptr;
 
 		SetEvent( m_pObjs->m_hEvent[!m_pObjs->m_dwCookie] );
@@ -175,7 +178,6 @@ BOOL SubProcessKernelObjects_Memory::Unlock()
 
 	return FALSE;
 }
-
 
 //////////////////////////////////////////////////////////////////////////
 //
@@ -193,8 +195,8 @@ BOOL SubProcessKernelObjects_Memory::Unlock()
 //
 //////////////////////////////////////////////////////////////////////////
 
-
-CSubProcessResponse::CSubProcessResponse( const void* pvMemory ) : m_pvMemory( pvMemory )
+CSubProcessResponse::CSubProcessResponse( const void* pvMemory )
+	: m_pvMemory( pvMemory )
 {
 	const byte* pBytes = static_cast<const byte*>( pvMemory );
 
@@ -254,12 +256,12 @@ int ShaderCompile_Subprocess_Main( std::string szSubProcessData, DWORD flags, bo
 			byte* pBytes = static_cast<byte*>( pvMemory );
 
 			// Result
-			const DWORD dwSucceededResult = pResponse->Succeeded() ? 1 : 0;
+			const DWORD dwSucceededResult       = pResponse->Succeeded() ? 1 : 0;
 			*reinterpret_cast<DWORD*>( pBytes ) = dwSucceededResult;
 			pBytes += sizeof( DWORD );
 
 			// Result buffer len
-			const DWORD dwBufferLength = gsl::narrow<DWORD>( pResponse->GetResultBufferLen() );
+			const DWORD dwBufferLength          = gsl::narrow<DWORD>( pResponse->GetResultBufferLen() );
 			*reinterpret_cast<DWORD*>( pBytes ) = dwBufferLength;
 			pBytes += sizeof( DWORD );
 

@@ -7,7 +7,7 @@
 #ifndef UTLSTRINGMAP_H
 #define UTLSTRINGMAP_H
 #ifdef _WIN32
-#pragma once
+	#pragma once
 #endif
 
 #include "utlsymbol.h"
@@ -16,7 +16,8 @@ template <class T>
 class CUtlStringMap
 {
 public:
-	CUtlStringMap( bool caseInsensitive = true ) : m_SymbolTable( 0, 32, caseInsensitive )
+	CUtlStringMap( bool caseInsensitive = true )
+		: m_SymbolTable( 0, 32, caseInsensitive )
 	{
 	}
 
@@ -24,8 +25,8 @@ public:
 	T& operator[]( const char* pString )
 	{
 		const CUtlSymbol symbol = m_SymbolTable.AddString( pString );
-		const size_t index = static_cast<size_t>( static_cast<UtlSymId_t>( symbol ) );
-		if( m_Vector.size() <= index )
+		const size_t index      = static_cast<size_t>( static_cast<UtlSymId_t>( symbol ) );
+		if ( m_Vector.size() <= index )
 			m_Vector.resize( index + 1 );
 		return m_Vector[index];
 	}
@@ -39,7 +40,7 @@ public:
 
 	const T& operator[]( UtlSymId_t n ) const
 	{
-		Assert( n >=0 && n <= m_Vector.size() );
+		Assert( n >= 0 && n <= m_Vector.size() );
 		return m_Vector[n];
 	}
 
@@ -63,7 +64,7 @@ public:
 		return m_SymbolTable.GetNumStrings();
 	}
 
-	const char* String( int n )	const
+	const char* String( int n ) const
 	{
 		return m_SymbolTable.String( n );
 	}

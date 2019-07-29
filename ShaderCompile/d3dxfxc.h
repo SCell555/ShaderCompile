@@ -9,17 +9,21 @@
 #ifndef D3DXFXC_H
 #define D3DXFXC_H
 #ifdef _WIN32
-#pragma once
+	#pragma once
 #endif
 
+#include "basetypes.h"
 #include "cmdsink.h"
 
 #define _SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS
 #include <hash_map>
 
+typedef void *HANDLE;
+
 class CSharedFile
 {
 	CSharedFile();
+
 public:
 	~CSharedFile();
 	static CSharedFile* CreateSharedFile( const char* fileName, const uint8* data, size_t size );
@@ -57,7 +61,7 @@ extern FileCache fileCache;
 namespace InterceptFxc
 {
 
-	bool TryExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, unsigned long flags );
+bool TryExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, unsigned long flags );
 
 }; // namespace InterceptFxc
 

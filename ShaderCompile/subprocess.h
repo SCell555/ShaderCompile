@@ -9,8 +9,13 @@
 #ifndef SUBPROCESS_H
 #define SUBPROCESS_H
 #ifdef _WIN32
-#pragma once
+	#pragma once
 #endif
+
+#include "cmdsink.h"
+#include <string>
+
+typedef void *HANDLE;
 
 class SubProcessKernelObjects
 {
@@ -21,21 +26,21 @@ public:
 	~SubProcessKernelObjects();
 
 	SubProcessKernelObjects( SubProcessKernelObjects const& ) = delete;
-	SubProcessKernelObjects& operator =( SubProcessKernelObjects const& ) = delete;
+	SubProcessKernelObjects& operator=( SubProcessKernelObjects const& ) = delete;
 
 protected:
-	BOOL Create( const char* szBaseName );
-	BOOL Open( const char* szBaseName );
+	bool Create( const char* szBaseName );
+	bool Open( const char* szBaseName );
 
 public:
-	[[nodiscard]] BOOL IsValid() const;
+	[[nodiscard]] bool IsValid() const;
 	void Close();
 
 protected:
 	HANDLE m_hMemorySection;
 	HANDLE m_hMutex;
 	HANDLE m_hEvent[2];
-	DWORD m_dwCookie;
+	unsigned m_dwCookie;
 };
 
 class SubProcessKernelObjects_Create : public SubProcessKernelObjects
@@ -53,15 +58,20 @@ public:
 class SubProcessKernelObjects_Memory
 {
 public:
-	SubProcessKernelObjects_Memory( SubProcessKernelObjects* p ) : m_pMemory( nullptr ), m_pObjs( p ), m_pLockData( nullptr ) {}
+	SubProcessKernelObjects_Memory( SubProcessKernelObjects* p )
+		: m_pMemory( nullptr )
+		, m_pObjs( p )
+		, m_pLockData( nullptr )
+	{
+	}
 	~SubProcessKernelObjects_Memory() { Unlock(); }
 
 public:
 	void* Lock();
-	BOOL Unlock();
+	bool Unlock();
 
 public:
-	[[nodiscard]] BOOL IsValid() const { return m_pLockData != nullptr; }
+	[[nodiscard]] bool IsValid() const { return m_pLockData != nullptr; }
 	[[nodiscard]] void* GetMemory() const { return m_pMemory; }
 
 protected:
@@ -71,7 +81,6 @@ private:
 	SubProcessKernelObjects* m_pObjs;
 	void* m_pLockData;
 };
-
 
 //
 // Response implementation
@@ -89,14 +98,12 @@ public:
 
 protected:
 	const void* m_pvMemory;
-	DWORD m_dwResult;
-	DWORD m_dwResultBufferLength;
+	unsigned long m_dwResult;
+	unsigned long m_dwResultBufferLength;
 	const void* m_pvResultBuffer;
 	const char* m_szListing;
 };
 
-
-int ShaderCompile_Subprocess_Main( std::string szSubProcessData, DWORD flags, bool local );
-
+int ShaderCompile_Subprocess_Main( std::string szSubProcessData, unsigned long flags, bool local );
 
 #endif // #ifndef SUBPROCESS_H

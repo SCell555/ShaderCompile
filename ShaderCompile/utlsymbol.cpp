@@ -6,9 +6,10 @@
 // $NoKeywords: $
 //=============================================================================//
 
-#pragma warning (disable:4514)
+#pragma warning( disable : 4514 )
 
 #include "utlsymbol.h"
+
 #include "gsl/gsl_util"
 
 static constexpr CUtlSymbolTable::CStringPoolIndex INVALID_STRING_INDEX( 0xFFFF, 0xFFFF );
@@ -19,7 +20,7 @@ static constexpr size_t MIN_STRING_POOL_SIZE = 2048;
 // symbol table stuff
 //-----------------------------------------------------------------------------
 
-inline const char* CUtlSymbolTable::StringFromIndex( const CStringPoolIndex &index ) const
+inline const char* CUtlSymbolTable::StringFromIndex( const CStringPoolIndex& index ) const
 {
 	Assert( index.m_iPool < m_StringPools.size() );
 	Assert( index.m_iOffset < m_StringPools[index.m_iPool]->m_TotalLen );
@@ -27,14 +28,11 @@ inline const char* CUtlSymbolTable::StringFromIndex( const CStringPoolIndex &ind
 	return &m_StringPools[index.m_iPool]->m_Data[index.m_iOffset];
 }
 
-
 bool CUtlSymbolTable::CLess::operator()( void* ctx, const CStringPoolIndex& i1, const CStringPoolIndex& i2 ) const
 {
 	CUtlSymbolTable* pTable = static_cast<CUtlSymbolTable*>( ctx );
-	const char* str1 = i1 == INVALID_STRING_INDEX ? pTable->m_pUserSearchString :
-													pTable->StringFromIndex( i1 );
-	const char* str2 = i2 == INVALID_STRING_INDEX ? pTable->m_pUserSearchString :
-													pTable->StringFromIndex( i2 );
+	const char* str1        = i1 == INVALID_STRING_INDEX ? pTable->m_pUserSearchString : pTable->StringFromIndex( i1 );
+	const char* str2        = i2 == INVALID_STRING_INDEX ? pTable->m_pUserSearchString : pTable->StringFromIndex( i2 );
 
 	if ( !str1 && str2 )
 		return false;
@@ -48,11 +46,12 @@ bool CUtlSymbolTable::CLess::operator()( void* ctx, const CStringPoolIndex& i1, 
 		return _stricmp( str1, str2 ) < 0;
 }
 
-
 //-----------------------------------------------------------------------------
 // constructor, destructor
 //-----------------------------------------------------------------------------
-CUtlSymbolTable::CUtlSymbolTable( int growSize, int initSize, bool caseInsensitive ) : m_Lookup( growSize, initSize, 0, this ), m_bInsensitive( caseInsensitive )
+CUtlSymbolTable::CUtlSymbolTable( int growSize, int initSize, bool caseInsensitive )
+	: m_Lookup( growSize, initSize, 0, this )
+	, m_bInsensitive( caseInsensitive )
 {
 }
 
@@ -64,10 +63,10 @@ CUtlSymbolTable::CUtlSymbolTable( const CUtlSymbolTable& other )
 	m_StringPools.reserve( other.m_StringPools.size() );
 	for ( size_t i = 0; i < other.m_StringPools.size(); ++i )
 	{
-		const auto& pool = other.m_StringPools[i];
-		auto& pool2 = m_StringPools[i];
-		pool2 = static_cast<StringPool_t*>( malloc( sizeof( StringPool_t ) + pool->m_TotalLen - 1 ) );
-		pool2->m_TotalLen = pool->m_TotalLen;
+		const auto& pool   = other.m_StringPools[i];
+		auto& pool2        = m_StringPools[i];
+		pool2              = static_cast<StringPool_t*>( malloc( sizeof( StringPool_t ) + pool->m_TotalLen - 1 ) );
+		pool2->m_TotalLen  = pool->m_TotalLen;
 		pool2->m_SpaceUsed = pool->m_SpaceUsed;
 		memcpy( pool2->m_Data, pool->m_Data, pool->m_TotalLen );
 	}
@@ -98,7 +97,6 @@ CUtlSymbol CUtlSymbolTable::Find( const char* pString ) const
 	return CUtlSymbol( idx );
 }
 
-
 size_t CUtlSymbolTable::FindPoolWithSpace( unsigned short len ) const
 {
 	for ( size_t i = 0; i < m_StringPools.size(); i++ )
@@ -110,7 +108,6 @@ size_t CUtlSymbolTable::FindPoolWithSpace( unsigned short len ) const
 
 	return -1;
 }
-
 
 //-----------------------------------------------------------------------------
 // Finds and/or creates a symbol based on the string
@@ -134,17 +131,17 @@ CUtlSymbol CUtlSymbolTable::AddString( const char* pString )
 	{
 		// Add a new pool.
 		const size_t newPoolSize = Max( len, MIN_STRING_POOL_SIZE );
-		StringPool_t* pPool = static_cast<StringPool_t*>( malloc( sizeof( StringPool_t ) + newPoolSize - 1 ) );
-		pPool->m_TotalLen = gsl::narrow<uint16>( newPoolSize );
-		pPool->m_SpaceUsed = 0;
-		iPool = m_StringPools.size();
+		StringPool_t* pPool      = static_cast<StringPool_t*>( malloc( sizeof( StringPool_t ) + newPoolSize - 1 ) );
+		pPool->m_TotalLen        = gsl::narrow<uint16>( newPoolSize );
+		pPool->m_SpaceUsed       = 0;
+		iPool                    = m_StringPools.size();
 		m_StringPools.emplace_back( pPool );
 	}
 
 	// Copy the string in.
 	StringPool_t* pPool = m_StringPools[iPool];
-	Assert( pPool->m_SpaceUsed < 0xFFFF );	// This should never happen, because if we had a string > 64k, it
-											// would have been given its entire own pool.
+	Assert( pPool->m_SpaceUsed < 0xFFFF ); // This should never happen, because if we had a string > 64k, it
+										   // would have been given its entire own pool.
 
 	const unsigned short iStringOffset = pPool->m_SpaceUsed;
 
@@ -153,13 +150,12 @@ CUtlSymbol CUtlSymbolTable::AddString( const char* pString )
 
 	// didn't find, insert the string into the vector.
 	CStringPoolIndex index;
-	index.m_iPool = gsl::narrow<uint16>( iPool );
+	index.m_iPool   = gsl::narrow<uint16>( iPool );
 	index.m_iOffset = iStringOffset;
 
 	const UtlSymId_t idx = m_Lookup.Insert( index );
 	return CUtlSymbol( idx );
 }
-
 
 //-----------------------------------------------------------------------------
 // Look up the string associated with a particular symbol
@@ -173,7 +169,6 @@ const char* CUtlSymbolTable::String( CUtlSymbol id ) const
 	Assert( m_Lookup.IsValidIndex( id ) );
 	return StringFromIndex( m_Lookup[id] );
 }
-
 
 //-----------------------------------------------------------------------------
 // Remove all symbols in the table.

@@ -9,8 +9,6 @@
 #ifndef SHADERCOMPILE_H
 #define SHADERCOMPILE_H
 
-
-void DebugOut( const char *pMsg, ... );
-
+void DebugOut( const char* pMsg, ... );
 
 #endif // SHADERCOMPILE_H

@@ -5,22 +5,22 @@
 
 #include <cstdint>
 #ifdef DEBUG
-#include <cassert>
+	#include <cassert>
 #endif
 
-using int8 = std::int8_t;
-using int16 = std::int16_t;
-using int32 = std::int32_t;
-using int64 = std::int64_t;
-using uint8 = std::uint8_t;
+using int8   = std::int8_t;
+using int16  = std::int16_t;
+using int32  = std::int32_t;
+using int64  = std::int64_t;
+using uint8  = std::uint8_t;
 using uint16 = std::uint16_t;
 using uint32 = std::uint32_t;
 using uint64 = std::uint64_t;
 
 #ifdef DEBUG
-#define Assert assert
+	#define Assert assert
 #else
-#define Assert(...)
+	#define Assert( ... )
 #endif
 
 template <class T>
@@ -50,9 +50,24 @@ template <typename T>
 class CAutoPushPop
 {
 public:
-	explicit CAutoPushPop( T& var ) : m_rVar( var ), m_valPop( var ) {}
-	CAutoPushPop( T& var, T const& valPush ) : m_rVar( var ), m_valPop( var ) { m_rVar = valPush; }
-	CAutoPushPop( T& var, T const& valPush, T const& valPop ) : m_rVar( var ), m_valPop( var ) { m_rVar = valPush; }
+	explicit CAutoPushPop( T& var )
+		: m_rVar( var )
+		, m_valPop( var )
+	{
+	}
+	CAutoPushPop( T& var, T const& valPush )
+		: m_rVar( var )
+		, m_valPop( var )
+	{
+		m_rVar = valPush;
+	}
+
+	CAutoPushPop( T& var, T const& valPush, T const& valPop )
+		: m_rVar( var )
+		, m_valPop( var )
+	{
+		m_rVar = valPush;
+	}
 
 	~CAutoPushPop() { m_rVar = m_valPop; }
 
