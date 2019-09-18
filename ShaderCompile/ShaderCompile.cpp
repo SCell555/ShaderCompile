@@ -35,6 +35,7 @@
 #include "utlbuffer.h"
 #include "utlnodehash.h"
 #include "utlstringmap.h"
+
 #include <ctime>
 #include <iomanip>
 #include <regex>
@@ -313,7 +314,7 @@ static void SzFree( void*, void* address )
 }
 static ISzAlloc g_Alloc = { SzAlloc, SzFree };
 
-static uint8* LZMA_Compress( uint8* pInput, size_t inputSize, size_t* pOutputSize )
+static uint8* Compress( uint8* pInput, size_t inputSize, size_t* pOutputSize )
 {
 	Byte* inBuffer = pInput;
 	CLzmaEncProps props;
@@ -829,9 +830,6 @@ public:
 	void Lock( unsigned nSpinSleepTime = 1 ) const volatile { const_cast<CThreadFastMutex*>( this )->Lock( nSpinSleepTime ); }
 	void Unlock() const volatile { const_cast<CThreadFastMutex*>( this )->Unlock(); }
 
-	[[nodiscard]] uint32 GetOwnerId() const { return m_ownerID; }
-	[[nodiscard]] int GetDepth() const { return m_depth; }
-
 private:
 	volatile uint32 m_ownerID;
 	int m_depth;
@@ -898,9 +896,6 @@ public:
 	static void Unlock() {}
 
 	static bool TryLock() { return true; }
-
-	static uint32 GetOwnerId() { return 0; }
-	static int GetDepth() { return 0; }
 };
 
 template <typename T>
@@ -1089,32 +1084,6 @@ public:
 			return pUseMtx->TryLock();
 		return true;
 	}
-	FORCEINLINE bool AssertOwnedByCurrentThread()
-	{
-		if ( MT_MUTEX_TYPE* pUseMtx = m_pUseMtx )
-			return pUseMtx->AssertOwnedByCurrentThread();
-		return true;
-	}
-	FORCEINLINE void SetTrace( bool b )
-	{
-		if ( MT_MUTEX_TYPE* pUseMtx = m_pUseMtx )
-			pUseMtx->SetTrace( b );
-	}
-
-	FORCEINLINE uint32 GetOwnerId()
-	{
-		if ( MT_MUTEX_TYPE* pUseMtx = m_pUseMtx )
-			return pUseMtx->GetOwnerId();
-		return 0;
-	}
-	FORCEINLINE int GetDepth()
-	{
-		if ( MT_MUTEX_TYPE* pUseMtx = m_pUseMtx )
-			return pUseMtx->GetDepth();
-		else
-			return 0;
-	}
-
 private:
 	MT_MUTEX_TYPE* m_pMtx;
 	CInterlockedPtr<MT_MUTEX_TYPE> m_pUseMtx;
@@ -1425,7 +1394,7 @@ static void FlushCombos( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamicComboBu
 		return;
 
 	size_t nCompressedSize;
-	uint8* pCompressedShader = LZMA::LZMA_Compress( reinterpret_cast<uint8*>( pDynamicComboBuffer.Base() ), pDynamicComboBuffer.TellPut(), &nCompressedSize );
+	uint8* pCompressedShader = LZMA::Compress( reinterpret_cast<uint8*>( pDynamicComboBuffer.Base() ), pDynamicComboBuffer.TellPut(), &nCompressedSize );
 	// high 2 bits of length =
 	// 00 = bzip2 compressed
 	// 10 = uncompressed
