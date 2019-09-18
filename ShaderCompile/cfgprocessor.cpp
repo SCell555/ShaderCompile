@@ -623,7 +623,7 @@ uint64 ComboGenerator::NumCombos() const
 	for ( size_t k = 0, kEnd = m_arrDefines.size(); k < kEnd; ++k )
 	{
 		Define const& df = m_arrDefines[k];
-		numCombos *= df.Max() - df.Min() + 1;
+		numCombos *= static_cast<uint64>( df.Max() ) - df.Min() + 1;
 	}
 
 	return numCombos;
@@ -636,7 +636,7 @@ uint64 ComboGenerator::NumCombos( bool bStaticCombos ) const
 	for ( size_t k = 0, kEnd = m_arrDefines.size(); k < kEnd; ++k )
 	{
 		Define const& df = m_arrDefines[k];
-		df.IsStatic() == bStaticCombos ? numCombos *= ( df.Max() - df.Min() + 1 ) : 0;
+		df.IsStatic() == bStaticCombos ? numCombos *= ( static_cast<uint64>( df.Max() ) - df.Min() + 1 ) : 0;
 	}
 
 	return numCombos;
@@ -828,7 +828,7 @@ bool ComboHandleImpl::AdvanceCommands( uint64& riAdvanceMore )
 	m_iComboNumber -= riAdvanceMore;
 	for ( pSetValues = pnValues, pSetDef = pDefVars; ( pSetValues < pnValuesEnd ) && ( riAdvanceMore > 0 ); ++pSetValues, ++pSetDef )
 	{
-		riAdvanceMore += ( pSetDef->Max() - *pSetValues );
+		riAdvanceMore += ( static_cast<uint64>( pSetDef->Max() ) - *pSetValues );
 		*pSetValues = pSetDef->Max();
 
 		const int iInterval = ( pSetDef->Max() - pSetDef->Min() + 1 );
