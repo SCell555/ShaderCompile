@@ -41,7 +41,9 @@ CSharedFile* CSharedFile::CreateSharedFile( const char* fileName, const uint8* d
 	char chBufferName[0x100] = { 0 };
 	sprintf_s( chBufferName, "shadercompile_file_%s", fileName );
 	file->m_pFile = CreateFileMapping( INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, gsl::narrow<DWORD>( size + sizeof( size_t ) ), chBufferName );
-	void* vptr = file->m_pBaseAddr    = MapViewOfFile( file->m_pFile, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
+	__assume( file->m_pFile );
+	void* vptr = file->m_pBaseAddr = MapViewOfFile( file->m_pFile, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
+	__assume( vptr );
 	uint8* ptr                        = static_cast<uint8*>( vptr );
 	*reinterpret_cast<size_t*>( ptr ) = size;
 	file->m_nSize                     = size;
@@ -64,6 +66,7 @@ CSharedFile* CSharedFile::CreateSharedFile( const char* fileName )
 		return nullptr;
 	}
 	void* vptr = file->m_pBaseAddr = MapViewOfFile( file->m_pFile, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
+	__assume( vptr );
 	uint8* ptr                     = static_cast<uint8*>( vptr );
 	file->m_nSize                  = *reinterpret_cast<size_t*>( ptr );
 	ptr += sizeof( size_t );
