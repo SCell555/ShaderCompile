@@ -338,9 +338,9 @@ namespace SourceCodeHasher
 		return str;
 	}
 
-	static char* stb_include_file( const char* filename, size_t& total, gsl::span<char> error );
+	static char* stb_include_file( const char* filename, size_t& total );
 
-	static char* stb_include_string( gsl::span<char> str, size_t& total, gsl::span<char> error )
+	static char* stb_include_string( gsl::span<char> str, size_t& total )
 	{
 		include_info* inc_list;
 		const int num = stb_include_find_includes( str, &inc_list );
@@ -352,7 +352,7 @@ namespace SourceCodeHasher
 			text = stb_include_append( text, &textlen, str.subspan( last, info.offset - last ) );
 			{
 				size_t len = 0;
-				char* inc = stb_include_file( info.filename, len, error );
+				char* inc = stb_include_file( info.filename, len );
 				total += len;
 				if ( inc == nullptr )
 				{
@@ -370,19 +370,14 @@ namespace SourceCodeHasher
 		return text;
 	}
 
-	static char* stb_include_file( const char* filename, size_t& total, gsl::span<char> error )
+	static char* stb_include_file( const char* filename, size_t& total )
 	{
 		size_t len;
 		char* text = stb_include_load_file( filename, len );
 		if ( text == nullptr )
-		{
-			strcpy_s( error.data(), error.size(), "Error: couldn't load '" );
-			strcat_s( error.data(), error.size(), filename );
-			strcat_s( error.data(), error.size(), "'" );
 			return nullptr;
-		}
 		total += len;
-		char* result = stb_include_string( gsl::make_span( text, len ), total, error );
+		char* result = stb_include_string( gsl::make_span( text, len ), total );
 		free( text );
 		return result;
 	}
@@ -390,12 +385,11 @@ namespace SourceCodeHasher
 	static CRC32::CRC32_t CalculateCRC( const char* fileName )
 	{
 		size_t length = 0;
-		char error[512] = { 0 };
 		setup_base_path( fileName );
 
-		char* src = stb_include_file( V_UnqualifiedFileName( fileName ), length, error );
+		char* src = stb_include_file( V_UnqualifiedFileName( fileName ), length );
 
-		if ( error[0] != 0 )
+		if ( src == nullptr )
 			return 0;
 
 		const auto& find = []( const char& a, const char& b ) { return a == '\r' && b == '\n'; };
