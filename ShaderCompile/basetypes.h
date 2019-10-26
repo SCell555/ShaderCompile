@@ -4,7 +4,7 @@
 #pragma once
 
 #include <cstdint>
-#ifdef DEBUG
+#ifdef _DEBUG
 	#include <cassert>
 #endif
 
@@ -17,7 +17,7 @@ using uint16 = std::uint16_t;
 using uint32 = std::uint32_t;
 using uint64 = std::uint64_t;
 
-#ifdef DEBUG
+#ifdef _DEBUG
 	#define Assert assert
 #else
 	#define Assert( ... )
@@ -51,20 +51,17 @@ class CAutoPushPop
 {
 public:
 	explicit CAutoPushPop( T& var )
-		: m_rVar( var )
-		, m_valPop( var )
+		: m_rVar( var ), m_valPop( var )
 	{
 	}
 	CAutoPushPop( T& var, T const& valPush )
-		: m_rVar( var )
-		, m_valPop( var )
+		: m_rVar( var ), m_valPop( var )
 	{
 		m_rVar = valPush;
 	}
 
 	CAutoPushPop( T& var, T const& valPush, T const& valPop )
-		: m_rVar( var )
-		, m_valPop( var )
+		: m_rVar( var ), m_valPop( valPop )
 	{
 		m_rVar = valPush;
 	}

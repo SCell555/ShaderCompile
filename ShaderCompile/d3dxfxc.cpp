@@ -81,7 +81,6 @@ void FileCache::Add( const char* fileName, const uint8* data, size_t size )
 		return;
 
 	m_map.insert( { fileName, CSharedFile::CreateSharedFile( fileName, data, size ) } );
-	;
 }
 
 CSharedFile* FileCache::Get( char const* szFilename )

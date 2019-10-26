@@ -39,7 +39,6 @@ class CUtlInplaceBuffer;
 namespace CfgProcessor
 {
 // Working with configuration
-void ReadConfiguration( FILE* fInputStream );
 void ReadConfiguration( CUtlInplaceBuffer* fInputStream );
 
 struct CfgEntryInfo

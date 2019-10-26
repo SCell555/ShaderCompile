@@ -13,6 +13,7 @@
 #include <cstdarg>
 #include <ctime>
 #include <map>
+#include <numeric>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -21,10 +22,9 @@
 // Type conversions should be controlled by programmer explicitly - shadercompile makes use of 64-bit integer arithmetics
 #pragma warning( error : 4244 )
 
-namespace
+namespace PreprocessorDbg
 {
-
-static bool s_bNoOutput = true;
+bool s_bNoOutput = true;
 
 #ifdef __RESHARPER__
 [[rscpp::format( printf, 2, 3 )]]
@@ -42,6 +42,8 @@ void OutputF( FILE* f, char const* szFmt, ... )
 
 }; // namespace
 
+using namespace PreprocessorDbg;
+
 //////////////////////////////////////////////////////////////////////////
 //
 // Define class
@@ -52,10 +54,7 @@ class Define
 {
 public:
 	explicit Define( char const* szName, int min, int max, bool bStatic )
-		: m_sName( szName )
-		, m_min( min )
-		, m_max( max )
-		, m_bStatic( bStatic )
+		: m_sName( szName ), m_min( min ), m_max( max ), m_bStatic( bStatic )
 	{
 	}
 
@@ -100,10 +99,7 @@ public:
 class CExprConstant : public IExpression
 {
 public:
-	CExprConstant( int64 value )
-		: m_value( value )
-	{
-	}
+	CExprConstant( int64 value ) : m_value( value ) {}
 	EVAL { return m_value; }
 	PRNT { OutputF( stdout, "%lld", m_value ); }
 
@@ -114,10 +110,7 @@ public:
 class CExprVariable : public IExpression
 {
 public:
-	CExprVariable( int nSlot )
-		: m_nSlot( nSlot )
-	{
-	}
+	CExprVariable( int nSlot ) : m_nSlot( nSlot ) {}
 	EVAL { return m_nSlot >= 0 ? pCtx->GetVariableValue( m_nSlot ) : 0; };
 	PRNT { m_nSlot >= 0 ? OutputF( stdout, "$%s", pCtx->GetVariableName( m_nSlot ) ) : OutputF( stdout, "$**@**" ); }
 
@@ -128,10 +121,7 @@ public:
 class CExprUnary : public IExpression
 {
 public:
-	CExprUnary( IExpression* x )
-		: m_x( x )
-	{
-	}
+	CExprUnary( IExpression* x ) : m_x( x ) {}
 
 public:
 	IExpression* m_x;
@@ -150,25 +140,21 @@ public:
 	;
 
 BEGIN_EXPR_UNARY( CExprUnary_Negate )
-EVAL
-{
-	return !m_x->Evaluate( pCtx );
-}
-PRNT
-{
-	OutputF( stdout, "!" );
-	m_x->Print( pCtx );
-}
+	EVAL
+	{
+		return !m_x->Evaluate( pCtx );
+	}
+	PRNT
+	{
+		OutputF( stdout, "!" );
+		m_x->Print( pCtx );
+	}
 END_EXPR_UNARY()
 
 class CExprBinary : public IExpression
 {
 public:
-	CExprBinary( IExpression* x, IExpression* y )
-		: m_x( x )
-		, m_y( y )
-	{
-	}
+	CExprBinary( IExpression* x, IExpression* y ) : m_x( x ), m_y( y ) {}
 	[[nodiscard]] virtual int Priority() const = 0;
 
 public:
@@ -185,147 +171,145 @@ public:
 		{                                           \
 		}
 #define EXPR_BINARY_PRIORITY( nPriority ) \
-	virtual int Priority() const override { return nPriority; }
+		int Priority() const override { return nPriority; }
 #define END_EXPR_BINARY() \
 	}                     \
 	;
 
 BEGIN_EXPR_BINARY( CExprBinary_And )
-EVAL
-{
-	return m_x->Evaluate( pCtx ) && m_y->Evaluate( pCtx );
-}
-PRNT
-{
-	OutputF( stdout, "( " );
-	m_x->Print( pCtx );
-	OutputF( stdout, " && " );
-	m_y->Print( pCtx );
-	OutputF( stdout, " )" );
-}
-EXPR_BINARY_PRIORITY( 1 );
+	EVAL
+	{
+		return m_x->Evaluate( pCtx ) && m_y->Evaluate( pCtx );
+	}
+	PRNT
+	{
+		OutputF( stdout, "( " );
+		m_x->Print( pCtx );
+		OutputF( stdout, " && " );
+		m_y->Print( pCtx );
+		OutputF( stdout, " )" );
+	}
+	EXPR_BINARY_PRIORITY( 1 );
 END_EXPR_BINARY()
 
 BEGIN_EXPR_BINARY( CExprBinary_Or )
-EVAL
-{
-	return m_x->Evaluate( pCtx ) || m_y->Evaluate( pCtx );
-}
-PRNT
-{
-	OutputF( stdout, "( " );
-	m_x->Print( pCtx );
-	OutputF( stdout, " || " );
-	m_y->Print( pCtx );
-	OutputF( stdout, " )" );
-}
-EXPR_BINARY_PRIORITY( 2 );
+	EVAL
+	{
+		return m_x->Evaluate( pCtx ) || m_y->Evaluate( pCtx );
+	}
+	PRNT
+	{
+		OutputF( stdout, "( " );
+		m_x->Print( pCtx );
+		OutputF( stdout, " || " );
+		m_y->Print( pCtx );
+		OutputF( stdout, " )" );
+	}
+	EXPR_BINARY_PRIORITY( 2 );
 END_EXPR_BINARY()
 
 BEGIN_EXPR_BINARY( CExprBinary_Eq )
-EVAL
-{
-	return m_x->Evaluate( pCtx ) == m_y->Evaluate( pCtx );
-}
-PRNT
-{
-	OutputF( stdout, "( " );
-	m_x->Print( pCtx );
-	OutputF( stdout, " == " );
-	m_y->Print( pCtx );
-	OutputF( stdout, " )" );
-}
-EXPR_BINARY_PRIORITY( 0 );
+	EVAL
+	{
+		return m_x->Evaluate( pCtx ) == m_y->Evaluate( pCtx );
+	}
+	PRNT
+	{
+		OutputF( stdout, "( " );
+		m_x->Print( pCtx );
+		OutputF( stdout, " == " );
+		m_y->Print( pCtx );
+		OutputF( stdout, " )" );
+	}
+	EXPR_BINARY_PRIORITY( 0 );
 END_EXPR_BINARY()
 
 BEGIN_EXPR_BINARY( CExprBinary_Neq )
-EVAL
-{
-	return m_x->Evaluate( pCtx ) != m_y->Evaluate( pCtx );
-}
-PRNT
-{
-	OutputF( stdout, "( " );
-	m_x->Print( pCtx );
-	OutputF( stdout, " != " );
-	m_y->Print( pCtx );
-	OutputF( stdout, " )" );
-}
-EXPR_BINARY_PRIORITY( 0 );
+	EVAL
+	{
+		return m_x->Evaluate( pCtx ) != m_y->Evaluate( pCtx );
+	}
+	PRNT
+	{
+		OutputF( stdout, "( " );
+		m_x->Print( pCtx );
+		OutputF( stdout, " != " );
+		m_y->Print( pCtx );
+		OutputF( stdout, " )" );
+	}
+	EXPR_BINARY_PRIORITY( 0 );
 END_EXPR_BINARY()
 
 BEGIN_EXPR_BINARY( CExprBinary_G )
-EVAL
-{
-	return m_x->Evaluate( pCtx ) > m_y->Evaluate( pCtx );
-}
-PRNT
-{
-	OutputF( stdout, "( " );
-	m_x->Print( pCtx );
-	OutputF( stdout, " > " );
-	m_y->Print( pCtx );
-	OutputF( stdout, " )" );
-}
-EXPR_BINARY_PRIORITY( 0 );
+	EVAL
+	{
+		return m_x->Evaluate( pCtx ) > m_y->Evaluate( pCtx );
+	}
+	PRNT
+	{
+		OutputF( stdout, "( " );
+		m_x->Print( pCtx );
+		OutputF( stdout, " > " );
+		m_y->Print( pCtx );
+		OutputF( stdout, " )" );
+	}
+	EXPR_BINARY_PRIORITY( 0 );
 END_EXPR_BINARY()
 
 BEGIN_EXPR_BINARY( CExprBinary_Ge )
-EVAL
-{
-	return m_x->Evaluate( pCtx ) >= m_y->Evaluate( pCtx );
-}
-PRNT
-{
-	OutputF( stdout, "( " );
-	m_x->Print( pCtx );
-	OutputF( stdout, " >= " );
-	m_y->Print( pCtx );
-	OutputF( stdout, " )" );
-}
-EXPR_BINARY_PRIORITY( 0 );
+	EVAL
+	{
+		return m_x->Evaluate( pCtx ) >= m_y->Evaluate( pCtx );
+	}
+	PRNT
+	{
+		OutputF( stdout, "( " );
+		m_x->Print( pCtx );
+		OutputF( stdout, " >= " );
+		m_y->Print( pCtx );
+		OutputF( stdout, " )" );
+	}
+	EXPR_BINARY_PRIORITY( 0 );
 END_EXPR_BINARY()
 
 BEGIN_EXPR_BINARY( CExprBinary_L )
-EVAL
-{
-	return m_x->Evaluate( pCtx ) < m_y->Evaluate( pCtx );
-}
-PRNT
-{
-	OutputF( stdout, "( " );
-	m_x->Print( pCtx );
-	OutputF( stdout, " < " );
-	m_y->Print( pCtx );
-	OutputF( stdout, " )" );
-}
-EXPR_BINARY_PRIORITY( 0 );
+	EVAL
+	{
+		return m_x->Evaluate( pCtx ) < m_y->Evaluate( pCtx );
+	}
+	PRNT
+	{
+		OutputF( stdout, "( " );
+		m_x->Print( pCtx );
+		OutputF( stdout, " < " );
+		m_y->Print( pCtx );
+		OutputF( stdout, " )" );
+	}
+	EXPR_BINARY_PRIORITY( 0 );
 END_EXPR_BINARY()
 
 BEGIN_EXPR_BINARY( CExprBinary_Le )
-EVAL
-{
-	return m_x->Evaluate( pCtx ) <= m_y->Evaluate( pCtx );
-}
-PRNT
-{
-	OutputF( stdout, "( " );
-	m_x->Print( pCtx );
-	OutputF( stdout, " <= " );
-	m_y->Print( pCtx );
-	OutputF( stdout, " )" );
-}
-EXPR_BINARY_PRIORITY( 0 );
+	EVAL
+	{
+		return m_x->Evaluate( pCtx ) <= m_y->Evaluate( pCtx );
+	}
+	PRNT
+	{
+		OutputF( stdout, "( " );
+		m_x->Print( pCtx );
+		OutputF( stdout, " <= " );
+		m_y->Print( pCtx );
+		OutputF( stdout, " )" );
+	}
+	EXPR_BINARY_PRIORITY( 0 );
 END_EXPR_BINARY()
 
 class CComplexExpression : public IExpression
 {
 public:
 	CComplexExpression( IEvaluationContext* pCtx )
-		: m_pRoot( nullptr )
-		, m_pContext( pCtx )
-		, m_pDefTrue( nullptr )
-		, m_pDefFalse( nullptr )
+		: m_pRoot( nullptr ), m_pContext( pCtx )
+		, m_pDefTrue( nullptr ), m_pDefFalse( nullptr )
 	{
 	}
 	~CComplexExpression() override { Clear(); }
@@ -618,28 +602,16 @@ void ComboGenerator::AddDefine( Define const& df )
 
 uint64 ComboGenerator::NumCombos() const
 {
-	uint64 numCombos = 1;
-
-	for ( size_t k = 0, kEnd = m_arrDefines.size(); k < kEnd; ++k )
-	{
-		Define const& df = m_arrDefines[k];
-		numCombos *= static_cast<uint64>( df.Max() ) - df.Min() + 1;
-	}
-
-	return numCombos;
+	return std::transform_reduce( m_arrDefines.cbegin(), m_arrDefines.cend(), 1ULL,
+		[]( const uint64& a, const uint64& b ) { return a * b; },
+		[]( const Define& d ) { return static_cast<uint64>( d.Max() ) - d.Min() + 1ULL; } );
 }
 
 uint64 ComboGenerator::NumCombos( bool bStaticCombos ) const
 {
-	uint64 numCombos = 1;
-
-	for ( size_t k = 0, kEnd = m_arrDefines.size(); k < kEnd; ++k )
-	{
-		Define const& df = m_arrDefines[k];
-		df.IsStatic() == bStaticCombos ? numCombos *= ( static_cast<uint64>( df.Max() ) - df.Min() + 1 ) : 0;
-	}
-
-	return numCombos;
+	return std::transform_reduce( m_arrDefines.cbegin(), m_arrDefines.cend(), 1ULL,
+		[]( const uint64& a, const uint64& b ) { return a * b; },
+		[bStaticCombos]( const Define& d ) { return d.IsStatic() == bStaticCombos ? static_cast<uint64>( d.Max() ) - d.Min() + 1ULL : 1ULL; } );
 }
 
 struct ComboEmission
@@ -647,9 +619,6 @@ struct ComboEmission
 	std::string m_sPrefix;
 	std::string m_sSuffix;
 } g_comboEmission;
-
-static constexpr size_t const g_lenTmpBuffer = 1 * 1024 * 1024; // 1Mb buffer for tmp storage
-static char g_chTmpBuffer[g_lenTmpBuffer];
 
 void ComboGenerator::RunAllCombos( CComplexExpression const& skipExpr )
 {
@@ -903,7 +872,7 @@ void ComboHandleImpl::FormatCommand( gsl::span<char> pchBuffer )
 	}
 }
 
-struct CAutoDestroyEntries
+static struct CAutoDestroyEntries
 {
 	~CAutoDestroyEntries()
 	{
@@ -911,40 +880,26 @@ struct CAutoDestroyEntries
 	}
 } s_autoDestroyEntries;
 
-template <typename T>
-T*& GetInputStream();
-
-template <>
-FILE*& GetInputStream()
-{
-	static FILE* s_fInput = stdin;
-	return s_fInput;
-}
-
-template <>
-CUtlInplaceBuffer*& GetInputStream()
+static CUtlInplaceBuffer*& GetInputStream()
 {
 	static CUtlInplaceBuffer* s_fInput = nullptr;
 	return s_fInput;
 }
 
-char* GetLinePtr_Private()
+static char* GetLinePtr_Private()
 {
-	if ( CUtlInplaceBuffer* pUtlBuffer = GetInputStream<CUtlInplaceBuffer>() )
+	if ( CUtlInplaceBuffer* pUtlBuffer = GetInputStream() )
 		return pUtlBuffer->InplaceGetLinePtr();
-
-	if ( FILE* fInput = GetInputStream<FILE>() )
-		return fgets( g_chTmpBuffer, g_lenTmpBuffer, fInput );
 
 	return nullptr;
 }
 
-bool LineEquals( char const* sz1, char const* sz2, int nLen )
+static bool LineEquals( char const* sz1, char const* sz2, int nLen )
 {
 	return 0 == strncmp( sz1, sz2, nLen );
 }
 
-char* NextLine()
+static char* NextLine()
 {
 	if ( char* szLine = GetLinePtr_Private() )
 	{
@@ -957,7 +912,7 @@ char* NextLine()
 	return nullptr;
 }
 
-char* WaitFor( char const* szWaitString, int nMatchLength )
+static char* WaitFor( char const* szWaitString, int nMatchLength )
 {
 	while ( char* pchResult = NextLine() )
 		if ( LineEquals( pchResult, szWaitString, nMatchLength ) )
@@ -966,7 +921,7 @@ char* WaitFor( char const* szWaitString, int nMatchLength )
 	return nullptr;
 }
 
-bool ProcessSection( CfgEntry& cfge )
+static bool ProcessSection( CfgEntry& cfge )
 {
 	bool bStaticDefines;
 
@@ -1047,7 +1002,7 @@ bool ProcessSection( CfgEntry& cfge )
 	return true;
 }
 
-void UnrollSectionCommands( CfgEntry const& cfge )
+static void UnrollSectionCommands( CfgEntry const& cfge )
 {
 	// Execute the combo computation
 	//
@@ -1070,30 +1025,7 @@ void UnrollSectionCommands( CfgEntry const& cfge )
 	g_comboEmission.m_sSuffix = "";
 }
 
-void RunSection( CfgEntry const& cfge )
-{
-	// Execute the combo computation
-	//
-	//
-
-	g_comboEmission.m_sPrefix = cfge.m_sPrefix;
-	g_comboEmission.m_sSuffix = cfge.m_sSuffix;
-
-	OutputF( stdout, "Preparing %lld combos for %s...\n", cfge.m_pCg->NumCombos(), cfge.m_szName );
-	OutputF( stderr, "#%s\n", cfge.m_szName );
-
-	const time_t tt_start = time( nullptr );
-	cfge.m_pCg->RunAllCombos( *cfge.m_pExpr );
-	const time_t tt_end = time( nullptr );
-
-	OutputF( stderr, "#%s\n", cfge.m_szName );
-	OutputF( stdout, "Prepared %s combos. %d sec.\n", cfge.m_szName, static_cast<int>( difftime( tt_end, tt_start ) ) );
-
-	g_comboEmission.m_sPrefix = "";
-	g_comboEmission.m_sSuffix = "";
-}
-
-void ProcessConfiguration()
+static void ProcessConfiguration()
 {
 	while ( char* szLine = WaitFor( "#BEGIN", 6 ) )
 	{
@@ -1146,24 +1078,18 @@ void ProcessConfiguration()
 namespace CfgProcessor
 {
 using CPCHI_t = ConfigurationProcessing::ComboHandleImpl;
-CPCHI_t* FromHandle( ComboHandle hCombo )
+static CPCHI_t* FromHandle( ComboHandle hCombo )
 {
 	return reinterpret_cast<CPCHI_t*>( hCombo );
 }
-ComboHandle AsHandle( CPCHI_t* pImpl )
+static ComboHandle AsHandle( CPCHI_t* pImpl )
 {
 	return reinterpret_cast<ComboHandle>( pImpl );
 }
 
-void ReadConfiguration( FILE* fInputStream )
-{
-	CAutoPushPop pushInputStream( ConfigurationProcessing::GetInputStream<FILE>(), fInputStream );
-	ConfigurationProcessing::ProcessConfiguration();
-}
-
 void ReadConfiguration( CUtlInplaceBuffer* fInputStream )
 {
-	CAutoPushPop pushInputStream( ConfigurationProcessing::GetInputStream<CUtlInplaceBuffer>(), fInputStream );
+	CAutoPushPop pushInputStream( ConfigurationProcessing::GetInputStream(), fInputStream );
 	ConfigurationProcessing::ProcessConfiguration();
 }
 
@@ -1198,7 +1124,7 @@ void DescribeConfiguration( std::unique_ptr<CfgEntryInfo[]>& rarrEntries )
 	pInfo->m_iCommandEnd   = nCurrentCommand;
 }
 
-const CPCHI_t& GetLessOrEq( uint64& k, const CPCHI_t& v )
+static const CPCHI_t& GetLessOrEq( uint64& k, const CPCHI_t& v )
 {
 	auto it = ConfigurationProcessing::s_mapComboCommands.lower_bound( k );
 	if ( ConfigurationProcessing::s_mapComboCommands.end() == it )
