@@ -103,7 +103,7 @@ namespace SourceCodeHasher
 
 	static int stb_include_isspace( int ch )
 	{
-		return ch == ' ' || ch == '\t' || ch == '\r' || ch == 'n';
+		return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
 	}
 
 	// find location of all #include and #inject
