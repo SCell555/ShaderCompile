@@ -15,12 +15,11 @@
 #include "basetypes.h"
 #include "cmdsink.h"
 
-#define _SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS
-#include <hash_map>
+#include "flat_map.hpp"
 
 typedef void *HANDLE;
 
-class CSharedFile
+class CSharedFile final
 {
 	CSharedFile();
 
@@ -39,7 +38,7 @@ private:
 	HANDLE m_pFile;
 };
 
-class FileCache
+class FileCache final
 {
 public:
 	FileCache() = default;
@@ -52,7 +51,8 @@ public:
 	void Clear();
 
 protected:
-	typedef stdext::hash_map<std::string, CSharedFile*> Mapping;
+	//typedef stdext::hash_map<std::string, CSharedFile*> Mapping;
+	typedef chobo::flat_map<std::string, CSharedFile*> Mapping;
 	Mapping m_map;
 };
 

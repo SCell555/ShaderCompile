@@ -187,9 +187,13 @@
     <ClInclude Include="cmdsink.h" />
     <ClInclude Include="d3dxfxc.h" />
     <ClInclude Include="ezOptionParser.hpp" />
+    <ClInclude Include="LZMA.hpp" />
+    <ClInclude Include="movingaverage.hpp" />
     <ClInclude Include="shadercompile.h" />
     <ClInclude Include="shader_vcs_version.h" />
+    <ClInclude Include="strmanip.hpp" />
     <ClInclude Include="subprocess.h" />
+    <ClInclude Include="termcolors.hpp" />
     <ClInclude Include="utlbuffer.h" />
     <ClInclude Include="utlintrusivelist.h" />
     <ClInclude Include="utlmemory.h" />

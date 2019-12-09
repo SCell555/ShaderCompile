@@ -43,7 +43,7 @@ public:
 	}
 
 	// Finds a conversion for the passed-in string, returns length
-	char FindConversion( const char* pString, int* pLength ) override
+	char FindConversion( const char*, int* pLength ) override
 	{
 		*pLength = 0;
 		return 0;
@@ -188,7 +188,7 @@ CUtlBuffer::CUtlBuffer( int growSize, int initSize, int nFlags )
 	m_Put     = 0;
 	m_nTab    = 0;
 	m_nOffset = 0;
-	m_Flags   = nFlags;
+	m_Flags   = static_cast<uint8>( nFlags );
 	if ( ( initSize != 0 ) && !IsReadOnly() )
 	{
 		m_nMaxPut = -1;
@@ -211,7 +211,7 @@ CUtlBuffer::CUtlBuffer( void* pBuffer, int nSize, int nFlags )
 	m_Put     = 0;
 	m_nTab    = 0;
 	m_nOffset = 0;
-	m_Flags   = nFlags;
+	m_Flags   = static_cast<uint8>( nFlags );
 	if ( IsReadOnly() )
 	{
 		m_nMaxPut = nSize;
@@ -234,7 +234,7 @@ CUtlBuffer::CUtlBuffer( const void* pBuffer, int nSize, int nFlags )
 	m_Put     = 0;
 	m_nTab    = 0;
 	m_nOffset = 0;
-	m_Flags   = nFlags | READ_ONLY;
+	m_Flags   = static_cast<uint8>( nFlags | READ_ONLY );
 	m_nMaxPut = nSize;
 	SetOverflowFuncs( &CUtlBuffer::GetOverflow, &CUtlBuffer::PutOverflow );
 }
@@ -300,7 +300,7 @@ void CUtlBuffer::SetExternalBuffer( void* pMemory, int nSize, int nInitialPut, i
 	m_nTab    = 0;
 	m_Error   = 0;
 	m_nOffset = 0;
-	m_Flags   = nFlags;
+	m_Flags   = static_cast<uint8>( nFlags );
 	m_nMaxPut = -1;
 	AddNullTermination();
 }
@@ -318,7 +318,7 @@ void CUtlBuffer::AssumeMemory( void* pMemory, int nSize, int nInitialPut, int nF
 	m_nTab    = 0;
 	m_Error   = 0;
 	m_nOffset = 0;
-	m_Flags   = nFlags;
+	m_Flags   = static_cast<uint8>( nFlags );
 	m_nMaxPut = -1;
 	AddNullTermination();
 }
@@ -1412,10 +1412,7 @@ void CUtlBuffer::PutDelimitedString( CUtlCharConversion* pConv, const char* pStr
 void CUtlBuffer::VaPrintf( const char* pFmt, va_list list )
 {
 	char temp[2048];
-#ifdef _DEBUG
-	const int nLen =
-#endif
-		vsnprintf( temp, sizeof( temp ), pFmt, list );
+	const int nLen = vsnprintf( temp, sizeof( temp ), pFmt, list );
 	Assert( nLen < 2048 );
 	PutString( temp );
 }
@@ -1472,7 +1469,7 @@ bool CUtlBuffer::PutOverflow( int nSize )
 	return true;
 }
 
-bool CUtlBuffer::GetOverflow( int nSize )
+bool CUtlBuffer::GetOverflow( int )
 {
 	return false;
 }

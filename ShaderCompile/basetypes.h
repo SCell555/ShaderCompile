@@ -20,7 +20,7 @@ using uint64 = std::uint64_t;
 #ifdef _DEBUG
 	#define Assert assert
 #else
-	#define Assert( ... )
+	#define Assert __noop
 #endif
 
 template <class T>

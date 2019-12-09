@@ -59,11 +59,7 @@ class SubProcessKernelObjects_Memory
 {
 public:
 	SubProcessKernelObjects_Memory( SubProcessKernelObjects* p )
-		: m_pMemory( nullptr )
-		, m_pObjs( p )
-		, m_pLockData( nullptr )
-	{
-	}
+		: m_pMemory( nullptr ), m_pObjs( p ), m_pLockData( nullptr ) {}
 	~SubProcessKernelObjects_Memory() { Unlock(); }
 
 public:

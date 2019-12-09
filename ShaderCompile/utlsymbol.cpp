@@ -106,7 +106,7 @@ size_t CUtlSymbolTable::FindPoolWithSpace( unsigned short len ) const
 			return i;
 	}
 
-	return -1;
+	return ~0ULL;
 }
 
 //-----------------------------------------------------------------------------
@@ -127,7 +127,7 @@ CUtlSymbol CUtlSymbolTable::AddString( const char* pString )
 
 	// Find a pool with space for this string, or allocate a new one.
 	size_t iPool = FindPoolWithSpace( gsl::narrow<uint16>( len ) );
-	if ( iPool == static_cast<size_t>( -1 ) )
+	if ( iPool == ~0ULL )
 	{
 		// Add a new pool.
 		const size_t newPoolSize = Max( len, MIN_STRING_POOL_SIZE );

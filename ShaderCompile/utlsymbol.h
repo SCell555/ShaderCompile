@@ -334,7 +334,7 @@ protected:
 	class CLess
 	{
 	public:
-		CLess( int unused = 0 ) {}
+		CLess( int = 0 ) {}
 		bool operator!() const { return false; }
 		bool operator()( void* ctx, const CStringPoolIndex& left, const CStringPoolIndex& right ) const;
 	};

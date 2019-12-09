@@ -35,13 +35,16 @@
 #include "utlbuffer.h"
 #include "utlnodehash.h"
 #include "utlstringmap.h"
-#include <ctime>
+#include <chrono>
 #include <future>
 #include <iomanip>
 #include <regex>
 #include <thread>
 
 #include "CRC32.hpp"
+#include "movingaverage.hpp"
+#include "termcolors.hpp"
+#include "strmanip.hpp"
 
 extern "C" {
 #define _7ZIP_ST
@@ -53,6 +56,8 @@ extern "C" {
 #undef _7ZIP_ST
 }
 
+#include "LZMA.hpp"
+
 #define STATIC_STRLEN( str ) ( ARRAYSIZE( str ) - 1 )
 
 #pragma comment( lib, "DbgHelp" )
@@ -62,304 +67,14 @@ extern "C" {
 
 static ez::ezOptionParser cmdLine;
 
-namespace clr
-{
-using namespace termcolor;
-static const auto red     = _internal::ansi_color( color( 222, 12, 17 ) );
-static const auto green   = _internal::ansi_color( color( 33, 201, 41 ) );
-static const auto green2  = _internal::ansi_color( color( 12, 222, 154 ) );
-static const auto blue    = _internal::ansi_color( color( 14, 70, 220 ) );
-static const auto pinkish = _internal::ansi_color( color( 254, 90, 90 ) );
-} // namespace clr
-
-template <typename StorageType, uint32 TBufferSize>
-class CUtlMovingAverage
-{
-public:
-	CUtlMovingAverage()
-		: m_buffer { 0 }
-		, m_nValuesPushed( 0 )
-		, m_nIndex( 0 )
-		, m_total( 0 )
-	{
-	}
-
-	void Reset()
-	{
-		m_nValuesPushed = 0;
-		m_nIndex        = 0;
-		m_total         = 0;
-		memset( m_buffer, 0, sizeof( m_buffer ) );
-	}
-
-	[[nodiscard]] StorageType GetAverage() const
-	{
-		const uint32 n = Min( TBufferSize, m_nIndex );
-		return gsl::narrow_cast<StorageType>( n ? ( m_total / static_cast<double>( n ) ) : 0 );
-	}
-
-	void PushValue( StorageType v )
-	{
-		uint32 nIndex   = m_nValuesPushed % TBufferSize;
-		m_nValuesPushed = nIndex + 1;
-		m_nIndex        = Max( m_nIndex, m_nValuesPushed );
-
-		m_total -= m_buffer[nIndex];
-		m_total += v;
-
-		m_buffer[nIndex] = v;
-	}
-
-private:
-	StorageType m_buffer[TBufferSize];
-	uint32 m_nValuesPushed;
-	uint32 m_nIndex;
-
-	StorageType m_total;
-};
-
-namespace LZMA
-{
-static constexpr int LZMA_ID = 'AMZL';
-#pragma pack( 1 )
-struct lzma_header_t
-{
-	uint32 id;
-	uint32 actualSize; // always little endian
-	uint32 lzmaSize;   // always little endian
-	uint8 properties[5];
-};
-#pragma pack()
-static_assert( sizeof( lzma_header_t ) == 17 );
-
-static void* SzAlloc( void*, size_t size )
-{
-	return malloc( size );
-}
-static void SzFree( void*, void* address )
-{
-	free( address );
-}
-static ISzAlloc g_Alloc = { SzAlloc, SzFree };
-
-static uint8* Compress( uint8* pInput, size_t inputSize, size_t* pOutputSize )
-{
-	Byte* inBuffer = pInput;
-	CLzmaEncProps props;
-	LzmaEncProps_Init( &props );
-	LzmaEncProps_Normalize( &props );
-
-	size_t outSize  = inputSize / 20 * 21 + ( 1 << 16 );
-	Byte* outBuffer = static_cast<Byte*>( malloc( outSize ) );
-	if ( outBuffer == nullptr )
-		return nullptr;
-
-	lzma_header_t* header = reinterpret_cast<lzma_header_t*>( outBuffer );
-	header->id            = LZMA_ID;
-	header->actualSize    = gsl::narrow<uint32>( inputSize );
-
-	{
-		size_t outSizeProcessed = outSize - sizeof( lzma_header_t );
-		size_t outPropsSize     = LZMA_PROPS_SIZE;
-
-		const SRes res = LzmaEncode( outBuffer + sizeof( lzma_header_t ), &outSizeProcessed,
-									 inBuffer, inputSize, &props, header->properties, &outPropsSize, 0,
-									 nullptr, &g_Alloc, &g_Alloc );
-
-		if ( res != SZ_OK )
-		{
-			free( outBuffer );
-			return nullptr;
-		}
-
-		header->lzmaSize = gsl::narrow<uint32>( outSizeProcessed );
-		outSize          = sizeof( lzma_header_t ) + outSizeProcessed;
-	}
-	*pOutputSize = outSize;
-	return outBuffer;
-}
-} // namespace LZMA
-
-namespace Plat
-{
-static LARGE_INTEGER g_PerformanceFrequency;
-static LARGE_INTEGER g_MSPerformanceFrequency;
-static LARGE_INTEGER g_ClockStart;
-
-static void InitTime()
-{
-	if ( !g_PerformanceFrequency.QuadPart )
-	{
-		QueryPerformanceFrequency( &g_PerformanceFrequency );
-		g_MSPerformanceFrequency.QuadPart = g_PerformanceFrequency.QuadPart / 1000;
-		QueryPerformanceCounter( &g_ClockStart );
-	}
-}
-
-static double FloatTime()
-{
-	InitTime();
-
-	LARGE_INTEGER CurrentTime;
-
-	QueryPerformanceCounter( &CurrentTime );
-
-	return static_cast<double>( CurrentTime.QuadPart - g_ClockStart.QuadPart ) / static_cast<double>( g_PerformanceFrequency.QuadPart );
-}
-} // namespace Plat
-
 // Dealing with job list
 static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> g_arrCompileEntries;
 static uint64 g_numShaders = 0, g_numCompileCommands = 0, g_numStaticCombos = 0;
 
-static std::string PrettyPrintNumber( uint64 k )
-{
-	char chCompileString[50] = { 0 };
-	char* pchPrint           = chCompileString + sizeof( chCompileString ) - 3;
-	for ( uint64 j = 0; k > 0; k /= 10, ++j )
-	{
-		( j && !( j % 3 ) ) ? ( *pchPrint-- = ',' ) : 0;
-		*pchPrint-- = '0' + char( k % 10 );
-	}
-	*++pchPrint ? 0 : *pchPrint = 0;
-	return pchPrint;
-}
-
-static void __PrettyPrintNumber( std::ios_base& s, uint64 k )
-{
-	dynamic_cast<std::ostream&>( s ) << PrettyPrintNumber( k );
-}
-
-static std::_Smanip<uint64> PrettyPrint( uint64 i )
-{
-	return { __PrettyPrintNumber, i };
-}
-
-static void __FormatTime( std::ios_base& s, uint64 nInputSeconds )
-{
-	uint64 nMinutes       = nInputSeconds / 60;
-	const uint64 nSeconds = nInputSeconds - nMinutes * 60;
-	const uint64 nHours   = nMinutes / 60;
-	nMinutes -= nHours * 60;
-
-	constexpr const char* const extra[2] = { "", "s" };
-
-	auto& str = dynamic_cast<std::ostream&>( s );
-	if ( nHours > 0 )
-		str << clr::green << nHours << clr::reset << " hour" << extra[nHours != 1] << ", " << clr::green << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
-	else if ( nMinutes > 0 )
-		str << clr::green << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
-	else
-		str << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
-}
-
-static void __FormatTime2( std::ios_base& s, uint64 nInputSeconds )
-{
-	uint64 nMinutes       = nInputSeconds / 60;
-	const uint64 nSeconds = nInputSeconds - nMinutes * 60;
-	const uint64 nHours   = nMinutes / 60;
-	nMinutes -= nHours * 60;
-
-	constexpr const char* const extra[2] = { "", "s" };
-
-	auto& str = dynamic_cast<std::ostream&>( s );
-	if ( nHours > 0 )
-		str << clr::green << nHours << clr::reset << ":" << clr::green << nMinutes << clr::reset << ":" << clr::green << nSeconds << clr::reset;
-	else if ( nMinutes > 0 )
-		str << clr::green << nMinutes << clr::reset << ":" << clr::green << nSeconds << clr::reset;
-	else
-		str << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
-}
-
-static std::_Smanip<uint64> FormatTime( uint64 i )
-{
-	return { __FormatTime, i };
-}
-
-static std::_Smanip<uint64> FormatTimeShort( uint64 i )
-{
-	return { __FormatTime2, i };
-}
-
-static FORCEINLINE bool PATHSEPARATOR( char c )
-{
-	return c == '\\' || c == '/';
-}
-
-static const char* V_GetFileExtension( const char* path )
-{
-	const char* src = path + ( strlen( path ) - 1 );
-
-	while ( src != path && *( src - 1 ) != '.' )
-		src--;
-
-	if ( src == path || PATHSEPARATOR( *src ) )
-		return nullptr; // no extension
-
-	return src;
-}
-
-static FORCEINLINE bool V_IsAbsolutePath( const char* pStr )
-{
-	return pStr[0] && pStr[1] == ':' || pStr[0] == '/' || pStr[0] == '\\';
-}
-
-static void V_StripFilename( char* path )
-{
-	int length = static_cast<int>( strlen( path ) ) - 1;
-	if ( length <= 0 )
-		return;
-
-	while ( length > 0 && !PATHSEPARATOR( path[length] ) )
-		length--;
-
-	path[length] = 0;
-}
-
-static void V_FixSlashes( char* pname, char separator = '\\' )
-{
-	while ( *pname )
-	{
-		if ( *pname == '/' || *pname == '\\' )
-			*pname = separator;
-		pname++;
-	}
-}
-
-static void V_StrTrim( char* pStr )
-{
-	char* pSource = pStr;
-	char* pDest   = pStr;
-
-	// skip white space at the beginning
-	while ( *pSource != 0 && isspace( *pSource ) )
-		pSource++;
-
-	// copy everything else
-	char* pLastWhiteBlock = nullptr;
-	while ( *pSource != 0 )
-	{
-		*pDest = *pSource++;
-		if ( isspace( *pDest ) )
-		{
-			if ( pLastWhiteBlock == nullptr )
-				pLastWhiteBlock = pDest;
-		}
-		else
-			pLastWhiteBlock = nullptr;
-		pDest++;
-	}
-	*pDest = 0;
-
-	// did we end in a whitespace block?
-	if ( pLastWhiteBlock != nullptr )
-		// yep; shorten the string
-		*pLastWhiteBlock = 0;
-}
-
+using Clock = std::chrono::high_resolution_clock;
 static std::string g_pShaderPath;
 static char g_ExeDir[MAX_PATH];
-static double g_flStartTime;
+static Clock::time_point g_flStartTime;
 static bool g_bVerbose  = false;
 static bool g_bVerbose2 = false;
 
@@ -386,7 +101,7 @@ struct CByteCodeBlock
 	int m_nCRC32;
 	uint64 m_nComboID;
 	size_t m_nCodeSize;
-	uint8* m_ByteCode;
+	std::unique_ptr<uint8[]> m_ByteCode;
 
 	CByteCodeBlock()
 	{
@@ -395,16 +110,11 @@ struct CByteCodeBlock
 
 	CByteCodeBlock( const void* pByteCode, size_t nCodeSize, uint64 nComboID )
 	{
-		m_ByteCode  = new uint8[nCodeSize];
+		m_ByteCode.reset( new uint8[nCodeSize] );
 		m_nComboID  = nComboID;
 		m_nCodeSize = nCodeSize;
-		memcpy( m_ByteCode, pByteCode, nCodeSize );
-		m_nCRC32 = CRC32::ProcessSingleBuffer( m_ByteCode, m_nCodeSize );
-	}
-
-	~CByteCodeBlock()
-	{
-		delete[] m_ByteCode;
+		memcpy( m_ByteCode.get(), pByteCode, nCodeSize );
+		m_nCRC32 = CRC32::ProcessSingleBuffer( m_ByteCode.get(), m_nCodeSize );
 	}
 };
 
@@ -415,12 +125,6 @@ static bool CompareDynamicComboIDs( const std::unique_ptr<CByteCodeBlock>& pA, c
 
 struct CStaticCombo // all the data for one static combo
 {
-	CStaticCombo *m_pNext, *m_pPrev;
-
-	uint64 m_nStaticComboID;
-
-	std::vector<std::unique_ptr<CByteCodeBlock>> m_DynamicCombos;
-
 	struct PackedCode : protected std::unique_ptr<uint8[]>
 	{
 		[[nodiscard]] size_t GetLength() const
@@ -445,11 +149,41 @@ struct CStaticCombo // all the data for one static combo
 			}
 			return GetData();
 		}
-	} m_abPackedCode; // Packed code for entire static combo
 
-	[[nodiscard]] uint64 Key() const
+		using std::unique_ptr<byte[]>::operator bool;
+	};
+	CStaticCombo* m_pNext, * m_pPrev;
+private:
+	uint64 m_nStaticComboID;
+
+	std::vector<std::unique_ptr<CByteCodeBlock>> m_DynamicCombos;
+
+	PackedCode m_abPackedCode; // Packed code for entire static combo
+
+public:
+	[[nodiscard]] __forceinline uint64 Key() const
 	{
 		return m_nStaticComboID;
+	}
+
+	[[nodiscard]] __forceinline uint64 ComboId() const
+	{
+		return m_nStaticComboID;
+	}
+
+	[[nodiscard]] __forceinline CStaticCombo* Next() const
+	{
+		return m_pNext;
+	}
+
+	[[nodiscard]] __forceinline const PackedCode& Code() const
+	{
+		return m_abPackedCode;
+	}
+
+	[[nodiscard]] __forceinline const std::vector<std::unique_ptr<CByteCodeBlock>>& DynamicCombos() const
+	{
+		return m_DynamicCombos;
 	}
 
 	CStaticCombo( uint64 nComboID )
@@ -519,10 +253,7 @@ static CUtlStringMap<ShaderInfo_t> g_ShaderToShaderInfo;
 class CompilerMsgInfo
 {
 public:
-	CompilerMsgInfo()
-		: m_numTimesReported( 0 )
-	{
-	}
+	CompilerMsgInfo() : m_numTimesReported( 0 ) {}
 
 	void SetMsgReportedCommand( const char* szCommand, int numTimesReported = 1 )
 	{
@@ -550,171 +281,20 @@ static CUtlStringMap<CompilerMsg> g_Master_CompilerMsg;
 
 namespace Threading
 {
-class CThreadFastMutex
+class CSTDMutex : public std::mutex
 {
 public:
-	CThreadFastMutex()
-		: m_ownerID( 0 )
-		, m_depth( 0 )
+	using std::mutex::mutex;
+
+	FORCEINLINE void Lock()
 	{
+		lock();
 	}
 
-private:
-	FORCEINLINE bool TryLockInline( const uint32 threadId ) volatile
+	FORCEINLINE void Unlock()
 	{
-		if ( threadId != m_ownerID && !InterlockedCompareExchange( &m_ownerID, threadId, 0 ) )
-			return false;
-
-		++m_depth;
-		return true;
+		unlock();
 	}
-
-	bool TryLock( const uint32 threadId ) volatile
-	{
-		return TryLockInline( threadId );
-	}
-
-	void Lock( const uint32 threadId, unsigned nSpinSleepTime ) volatile
-	{
-		int i;
-		if ( nSpinSleepTime != INFINITE )
-		{
-			for ( i = 1000; i != 0; --i )
-			{
-				if ( TryLock( threadId ) )
-					return;
-				_mm_pause();
-			}
-
-			if ( !nSpinSleepTime && GetThreadPriority( GetCurrentThread() ) > THREAD_PRIORITY_NORMAL )
-			{
-				nSpinSleepTime = 1;
-			}
-			else if ( nSpinSleepTime )
-			{
-				for ( i = 4000; i != 0; --i )
-				{
-					if ( TryLock( threadId ) )
-						return;
-
-					_mm_pause();
-					Sleep( 0 );
-				}
-			}
-
-			for ( ;; ) // coded as for instead of while to make easy to breakpoint success
-			{
-				if ( TryLock( threadId ) )
-					return;
-
-				_mm_pause();
-				Sleep( nSpinSleepTime );
-			}
-		}
-		else
-		{
-			for ( ;; ) // coded as for instead of while to make easy to breakpoint success
-			{
-				if ( TryLock( threadId ) )
-					return;
-
-				_mm_pause();
-			}
-		}
-	}
-
-public:
-	bool TryLock() volatile
-	{
-		return TryLockInline( GetCurrentThreadId() );
-	}
-
-#ifndef _DEBUG
-	FORCEINLINE
-#endif
-	void Lock( unsigned nSpinSleepTime = 0 ) volatile
-	{
-		const uint32 threadId = GetCurrentThreadId();
-
-		if ( !TryLockInline( threadId ) )
-		{
-			_mm_pause();
-			Lock( threadId, nSpinSleepTime );
-		}
-	}
-
-#ifndef _DEBUG
-	FORCEINLINE
-#endif
-	void Unlock() volatile
-	{
-		--m_depth;
-		if ( !m_depth )
-			InterlockedExchange( &m_ownerID, 0 );
-	}
-
-	bool TryLock() const volatile { return const_cast<CThreadFastMutex*>( this )->TryLock(); }
-	void Lock( unsigned nSpinSleepTime = 1 ) const volatile { const_cast<CThreadFastMutex*>( this )->Lock( nSpinSleepTime ); }
-	void Unlock() const volatile { const_cast<CThreadFastMutex*>( this )->Unlock(); }
-
-private:
-	volatile uint32 m_ownerID;
-	int m_depth;
-};
-
-class CThreadMutex
-{
-public:
-	CThreadMutex()
-	{
-		[[maybe_unused]] const BOOL res = InitializeCriticalSectionAndSpinCount( &m_CriticalSection, 4000 );
-		Assert( res );
-	}
-
-	~CThreadMutex()
-	{
-		DeleteCriticalSection( &m_CriticalSection );
-	}
-
-	//------------------------------------------------------
-	// Mutex acquisition/release. Const intentionally defeated.
-	//------------------------------------------------------
-	void Lock()
-	{
-		EnterCriticalSection( &m_CriticalSection );
-	}
-
-	void Lock() const
-	{
-		const_cast<CThreadMutex*>( this )->Lock();
-	}
-
-	void Unlock()
-	{
-		LeaveCriticalSection( &m_CriticalSection );
-	}
-
-	void Unlock() const
-	{
-		const_cast<CThreadMutex*>( this )->Unlock();
-	}
-
-	bool TryLock()
-	{
-		return TryEnterCriticalSection( &m_CriticalSection ) != FALSE;
-	}
-
-	bool TryLock() const
-	{
-		return const_cast<CThreadMutex*>( this )->TryLock();
-	}
-
-	// Disallow copying
-	CThreadMutex( const CThreadMutex& ) = delete;
-	CThreadMutex& operator=( const CThreadMutex& ) = delete;
-
-private:
-	CRITICAL_SECTION m_CriticalSection;
 };
 
 class CThreadNullMutex
@@ -722,8 +302,6 @@ class CThreadNullMutex
 public:
 	static void Lock() {}
 	static void Unlock() {}
-
-	static bool TryLock() { return true; }
 };
 
 template <typename T>
@@ -735,14 +313,8 @@ class CInterlockedPtr
 	using cast_type = volatile unsigned long*;
 #endif
 public:
-	CInterlockedPtr()
-		: m_value( nullptr )
-	{
-	}
-	CInterlockedPtr( T* value )
-		: m_value( value )
-	{
-	}
+	CInterlockedPtr() : m_value( nullptr ) {}
+	CInterlockedPtr( T* value ) : m_value( value ) {}
 
 	operator T*() const { return m_value; }
 
@@ -781,14 +353,8 @@ private:
 class CInterlockedInt
 {
 public:
-	CInterlockedInt()
-		: m_value( 0 )
-	{
-	}
-	CInterlockedInt( int value )
-		: m_value( value )
-	{
-	}
+	CInterlockedInt() : m_value( 0 ) {}
+	CInterlockedInt( int value ) : m_value( value ) {}
 
 	operator int() const { return m_value; }
 
@@ -876,55 +442,38 @@ enum Mode
 
 // A special object that makes single-threaded code incur no penalties
 // and multithreaded code to be synchronized properly.
-template <class MT_MUTEX_TYPE = CThreadFastMutex>
+template <auto& mtx>
 class CSwitchableMutex
 {
+	using mtx_type = std::decay_t<decltype( mtx )>;
 public:
-	FORCEINLINE explicit CSwitchableMutex( Mode eMode, MT_MUTEX_TYPE* pMtMutex = nullptr )
-		: m_pMtx( pMtMutex )
-		, m_pUseMtx( eMode ? pMtMutex : nullptr )
-	{
-	}
+	FORCEINLINE explicit CSwitchableMutex() : m_pUseMtx( nullptr ) {}
 
-public:
-	FORCEINLINE void SetMtMutex( MT_MUTEX_TYPE* pMtMutex )
-	{
-		m_pMtx    = pMtMutex;
-		m_pUseMtx = m_pUseMtx ? pMtMutex : nullptr;
-	}
-	FORCEINLINE void SetThreadedMode( Mode eMode ) { m_pUseMtx = eMode ? m_pMtx : nullptr; }
+	FORCEINLINE void SetThreadedMode( Mode eMode ) { m_pUseMtx = eMode ? &mtx : nullptr; }
 
-public:
 	FORCEINLINE void Lock()
 	{
-		if ( MT_MUTEX_TYPE* pUseMtx = m_pUseMtx )
+		if ( mtx_type* pUseMtx = m_pUseMtx )
 			pUseMtx->Lock();
 	}
+
 	FORCEINLINE void Unlock()
 	{
-		if ( MT_MUTEX_TYPE* pUseMtx = m_pUseMtx )
+		if ( mtx_type* pUseMtx = m_pUseMtx )
 			pUseMtx->Unlock();
 	}
 
-	FORCEINLINE bool TryLock()
-	{
-		if ( MT_MUTEX_TYPE* pUseMtx = m_pUseMtx )
-			return pUseMtx->TryLock();
-		return true;
-	}
-
 private:
-	MT_MUTEX_TYPE* m_pMtx;
-	CInterlockedPtr<MT_MUTEX_TYPE> m_pUseMtx;
+	CInterlockedPtr<mtx_type> m_pUseMtx;
 };
 
 namespace Private
 {
-	using MtMutexType_t = CThreadMutex;
+	using MtMutexType_t = CSTDMutex;
 	static MtMutexType_t g_mtxSyncObjMT;
 }; // namespace Private
 
-static CSwitchableMutex<Private::MtMutexType_t> g_mtxGlobal( eSingleThreaded, &Private::g_mtxSyncObjMT );
+static CSwitchableMutex<Private::g_mtxSyncObjMT> g_mtxGlobal;
 }; // namespace Threading
 
 namespace SourceCodeHasher
@@ -1262,8 +811,8 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	const bool bShaderFailed                = g_Master_ShaderHadError.Defined( pShaderName );
 	const char* const szShaderFileOperation = bShaderFailed ? "Removing failed" : "Writing";
 
-	static int lastLine    = 0;
-	static double lastTime = g_flStartTime;
+	static int lastLine               = 0;
+	static Clock::time_point lastTime = g_flStartTime;
 	++lastLine;
 
 	//
@@ -1311,9 +860,9 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	if ( bShaderFailed )
 	{
 		_unlink( szVCSfilename );
-		std::cout << "\r" << clr::red << pShaderName << clr::reset << " " << FormatTimeShort( static_cast<uint64>( Plat::FloatTime() - lastTime ) ) << "                                        \r";
+		std::cout << "\r" << clr::red << pShaderName << clr::reset << " " << FormatTimeShort( std::chrono::duration_cast<std::chrono::seconds>( Clock::now() - lastTime ).count() ) << "                                        \r";
 		std::cout << ( "\033["s + std::to_string( lastLine ) + "A" );
-		lastTime = Plat::FloatTime();
+		lastTime = Clock::now();
 		return;
 	}
 
@@ -1332,33 +881,35 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	//
 	std::vector<StaticComboAuxInfo_t> StaticComboHeaders;
 
-	StaticComboHeaders.reserve( 1 + pByteCodeArray->Count() ); // we know how much ram we need
+	StaticComboHeaders.reserve( 1ULL + pByteCodeArray->Count() ); // we know how much ram we need
 
 	std::vector<int> comboIndicesHashedByCRC32[STATIC_COMBO_HASH_SIZE];
 	std::vector<StaticComboAliasRecord_t> duplicateCombos;
 
 	// now, lets fill in our combo headers, sort, and write
-	for ( uint32 nChain = 0; nChain < ARRAYSIZE( pByteCodeArray->m_HashChains ); nChain++ )
+	for ( uint32 nChain = 0; nChain < StaticComboNodeHash_t::NumChains; nChain++ )
 	{
-		for ( CStaticCombo* pStatic = pByteCodeArray->m_HashChains[nChain].m_pHead; pStatic; pStatic = pStatic->m_pNext )
+		for ( CStaticCombo* pStatic = pByteCodeArray->Chain( nChain ).Head(); pStatic; pStatic = pStatic->Next() )
 		{
-			if ( pStatic->m_abPackedCode.GetLength() )
+			const CStaticCombo::PackedCode& code = pStatic->Code();
+			if ( code.GetLength() )
 			{
-				StaticComboAuxInfo_t Hdr;
-				Hdr.m_nStaticComboID  = gsl::narrow<uint32>( pStatic->m_nStaticComboID );
-				Hdr.m_nFileOffset     = 0; // fill in later
-				Hdr.m_nCRC32          = CRC32::ProcessSingleBuffer( pStatic->m_abPackedCode.GetData(), pStatic->m_abPackedCode.GetLength() );
-				const uint32 nHashIdx = Hdr.m_nCRC32 % STATIC_COMBO_HASH_SIZE;
-				Hdr.m_pByteCode       = pStatic;
+				StaticComboAuxInfo_t hdr;
+				hdr.m_nStaticComboID  = gsl::narrow<uint32>( pStatic->ComboId() );
+				hdr.m_nFileOffset     = 0; // fill in later
+				hdr.m_nCRC32          = CRC32::ProcessSingleBuffer( code.GetData(), code.GetLength() );
+				const uint32 nHashIdx = hdr.m_nCRC32 % STATIC_COMBO_HASH_SIZE;
+				hdr.m_pByteCode       = pStatic;
 				// now, see if we have an identical static combo
 				bool bIsDuplicate = false;
 				for ( int i : comboIndicesHashedByCRC32[nHashIdx] )
 				{
 					const StaticComboAuxInfo_t& check = StaticComboHeaders[i];
-					if ( ( check.m_nCRC32 == Hdr.m_nCRC32 ) && ( check.m_pByteCode->m_abPackedCode.GetLength() == pStatic->m_abPackedCode.GetLength() ) && ( memcmp( check.m_pByteCode->m_abPackedCode.GetData(), pStatic->m_abPackedCode.GetData(), check.m_pByteCode->m_abPackedCode.GetLength() ) == 0 ) )
+					const CStaticCombo::PackedCode& checkCode = check.m_pByteCode->Code();
+					if ( check.m_nCRC32 == hdr.m_nCRC32 && checkCode.GetLength() == code.GetLength() && memcmp( checkCode.GetData(), code.GetData(), checkCode.GetLength() ) == 0 )
 					{
 						// this static combo is the same as another one!!
-						duplicateCombos.emplace_back( StaticComboAliasRecord_t { Hdr.m_nStaticComboID, check.m_nStaticComboID } );
+						duplicateCombos.emplace_back( StaticComboAliasRecord_t { hdr.m_nStaticComboID, check.m_nStaticComboID } );
 						bIsDuplicate = true;
 						break;
 					}
@@ -1366,7 +917,7 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 
 				if ( !bIsDuplicate )
 				{
-					StaticComboHeaders.emplace_back( Hdr );
+					StaticComboHeaders.emplace_back( hdr );
 					comboIndicesHashedByCRC32[nHashIdx].emplace_back( gsl::narrow<int>( StaticComboHeaders.size() - 1 ) );
 				}
 			}
@@ -1422,8 +973,8 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 			Assert( pStatic );
 
 			// Put the packed chunk of code for this static combo
-			if ( const size_t nPackedLen = pStatic->m_abPackedCode.GetLength() )
-				ShaderFile.write( reinterpret_cast<const char*>( pStatic->m_abPackedCode.GetData() ), nPackedLen );
+			if ( const auto& code = pStatic->Code() )
+				ShaderFile.write( reinterpret_cast<const char*>( code.GetData() ), code.GetLength() );
 
 			constexpr uint32 endMark = 0xffffffff; // end of dynamic combos
 			ShaderFile.write( reinterpret_cast<const char*>( &endMark ), sizeof( endMark ) );
@@ -1446,9 +997,9 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 
 	if ( !end )
 	{
-		std::cout << "\r" << clr::green << pShaderName << clr::reset << " " << FormatTimeShort( static_cast<uint64>( Plat::FloatTime() - lastTime ) ) << "                                        \r";
+		std::cout << "\r" << clr::green << pShaderName << clr::reset << " " << FormatTimeShort( std::chrono::duration_cast<std::chrono::seconds>( Clock::now() - lastTime ).count() ) << "                                        \r";
 		std::cout << ( "\033["s + std::to_string( lastLine ) + "A" );
-		lastTime = Plat::FloatTime();
+		lastTime = Clock::now();
 	}
 }
 
@@ -1465,33 +1016,33 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 
 	size_t nBytesWritten = 0;
 
-	if ( pStComboRec && !pStComboRec->m_DynamicCombos.empty() )
+	if ( pStComboRec && !pStComboRec->DynamicCombos().empty() )
 	{
 		CUtlBuffer ubDynamicComboBuffer;
 
 		pStComboRec->SortDynamicCombos();
 		// iterate over all dynamic combos.
-		for ( auto& combo : pStComboRec->m_DynamicCombos )
+		for ( auto& combo : pStComboRec->DynamicCombos() )
 		{
 			CByteCodeBlock* pCode = combo.get();
 			// check if we have already output an identical combo
 			OutputDynamicCombo( nBytesWritten, ubDynamicComboBuffer, pBuf, pCode->m_nComboID,
-								gsl::narrow<uint32>( pCode->m_nCodeSize ), pCode->m_ByteCode );
+								gsl::narrow<uint32>( pCode->m_nCodeSize ), pCode->m_ByteCode.get() );
 		}
 		FlushCombos( nBytesWritten, ubDynamicComboBuffer, pBuf );
 	}
 
 	// Time to limit amount of prints
-	thread_local static double s_fLastInfoTime = 0;
-	thread_local static uint64 s_nLastEntry    = nComboOfEntry;
-	thread_local static CUtlMovingAverage<uint64, 60> s_averageProcess;
-	thread_local static const char* s_lastShader = pEntry->m_szName;
-	const double fCurTime                        = Plat::FloatTime();
+	static Clock::time_point s_fLastInfoTime;
+	static uint64 s_nLastEntry = nComboOfEntry;
+	static CUtlMovingAverage<uint64, 60> s_averageProcess;
+	static const char* s_lastShader = pEntry->m_szName;
+	const Clock::time_point fCurTime = Clock::now();
 
 	GLOBAL_DATA_MTX_LOCK();
 	if ( pStComboRec )
 		pByteCodeArray->DeleteByKey( nComboOfEntry );
-	if ( fabs( fCurTime - s_fLastInfoTime ) > 1.0 )
+	if ( std::chrono::duration_cast<std::chrono::seconds>(fCurTime - s_fLastInfoTime ).count() != 0 )
 	{
 		if ( s_lastShader != pEntry->m_szName )
 		{
@@ -1503,7 +1054,7 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 		s_averageProcess.PushValue( s_nLastEntry - nComboOfEntry );
 		s_nLastEntry = nComboOfEntry;
 		std::cout << "\rCompiling " << clr::green << pEntry->m_szName << clr::reset << " [ " << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining ("
-				  << clr::green2 << s_averageProcess.GetAverage() << clr::reset << " c/m) ] " << FormatTimeShort( static_cast<uint64>( fCurTime - g_flStartTime ) ) << " elapsed         \r";
+				  << clr::green2 << s_averageProcess.GetAverage() << clr::reset << " c/m) ] " << FormatTimeShort( std::chrono::duration_cast<std::chrono::seconds>( fCurTime - g_flStartTime ).count() ) << " elapsed         \r";
 		s_fLastInfoTime = fCurTime;
 	}
 	GLOBAL_DATA_MTX_UNLOCK();
@@ -1516,14 +1067,9 @@ class CWorkerAccumState
 {
 public:
 	explicit CWorkerAccumState( TMutexType* pMutex )
-		: m_pMutex( pMutex )
-		, m_iFirstCommand( 0 )
-		, m_iNextCommand( 0 )
-		, m_iEndCommand( 0 )
-		, m_iLastFinished( 0 )
-		, m_hCombo( nullptr )
-	{
-	}
+		: m_pMutex( pMutex ), m_iFirstCommand( 0 )
+		, m_iNextCommand( 0 ), m_iEndCommand( 0 )
+		, m_iLastFinished( 0 ), m_hCombo( nullptr ) {}
 
 	void RangeBegin( uint64 iFirstCommand, uint64 iEndCommand );
 	void RangeFinished();
@@ -1553,7 +1099,7 @@ public:
 	}
 
 	void QuitSubs();
-	bool OnProcessST();
+	void OnProcessST();
 
 protected:
 	Threading::CInterlockedInt m_nActive;
@@ -1671,7 +1217,7 @@ void CWorkerAccumState<TMutexType>::QuitSubs()
 }
 
 template <size_t N>
-static void PrepareFlagsForSubprocess( char ( &pBuf )[N] )
+static __forceinline void PrepareFlagsForSubprocess( char ( &pBuf )[N] )
 {
 	if ( gFlags & D3DCOMPILE_PARTIAL_PRECISION )
 		strcat_s( pBuf, "/Gpp " );
@@ -1730,9 +1276,7 @@ void CWorkerAccumState<TMutexType>::PrepareSubProcess( SubProcess** ppSp, SubPro
 			Assert( bCreateResult );
 		}
 		else
-		{
 			pSp->pThread = std::async( std::launch::async, ShaderCompile_Subprocess_Main, std::string( chBaseNameBuffer ), gFlags, true );
-		}
 
 		m_pMutex->Lock();
 		pSp->dwIndex = m_arrSubProcessInfos.size();
@@ -1834,13 +1378,10 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 	const char* szListing = pResponse->GetListing();
 	if ( szListing || !pResponse->Succeeded() )
 	{
-		char chCommandNumber[50];
-		sprintf_s( chCommandNumber, "%I64u", iCommandNumber );
-
 		char chUnreportedListing[0xFF];
 		if ( !szListing )
 		{
-			sprintf_s( chUnreportedListing, "(%s): error 0000: Compiler failed without error description. Command number %s", pEntryInfo->m_szShaderFileName, chCommandNumber );
+			sprintf_s( chUnreportedListing, "(%s): error 0000: Compiler failed without error description. Command number %llu", pEntryInfo->m_szShaderFileName, iCommandNumber );
 			szListing = chUnreportedListing;
 		}
 
@@ -1974,7 +1515,7 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 }
 
 template <typename TMutexType>
-bool CWorkerAccumState<TMutexType>::OnProcessST()
+void CWorkerAccumState<TMutexType>::OnProcessST()
 {
 	while ( m_hCombo )
 	{
@@ -1982,7 +1523,6 @@ bool CWorkerAccumState<TMutexType>::OnProcessST()
 
 		Combo_GetNext( m_iNextCommand, m_hCombo, m_iEndCommand );
 	}
-	return false;
 }
 
 //
@@ -2029,13 +1569,9 @@ protected:
 	//
 	struct MT
 	{
-		MT()
-			: pWorkerObj( nullptr )
-		{
-		}
+		MT() : pWorkerObj( nullptr ) {}
 
-		//using MultiThreadMutex_t = Threading::CThreadFastMutex;
-		using MultiThreadMutex_t = Threading::CThreadMutex;
+		using MultiThreadMutex_t = Threading::CSTDMutex;
 		MultiThreadMutex_t mtx;
 
 		using WorkerClass_t = CWorkerAccumState<MultiThreadMutex_t>;
@@ -2047,10 +1583,7 @@ protected:
 	//
 	struct ST
 	{
-		ST()
-			: pWorkerObj( nullptr )
-		{
-		}
+		ST() : pWorkerObj( nullptr ) {}
 
 		using SingleThreadMutex_t = Threading::CThreadNullMutex;
 		SingleThreadMutex_t mtx;
@@ -2241,7 +1774,7 @@ static void Worker_GetLocalCopyOfShaders()
 
 static void Shared_ParseListOfCompileCommands()
 {
-	const double tt_start = Plat::FloatTime();
+	const Clock::time_point tt_start = Clock::now();
 
 	char fileListFileName[1024];
 	sprintf_s( fileListFileName, "%s\\filelist.txt", g_pShaderPath.c_str() );
@@ -2263,28 +1796,9 @@ static void Shared_ParseListOfCompileCommands()
 		g_numCompileCommands = pInfo->m_iCommandEnd;
 	}
 
-	const double tt_end = Plat::FloatTime();
+	const Clock::time_point tt_end = Clock::now();
 
-	std::cout << "\rCompiling " << clr::green << PrettyPrint( g_numCompileCommands ) << clr::reset << " commands, setup took " << clr::green << ( tt_end - tt_start ) << clr::reset << " seconds.         \r";
-}
-
-static void SetupExeDir( int argc, const char* argv[] )
-{
-	strcpy_s( g_ExeDir, argv[0] );
-	V_StripFilename( g_ExeDir );
-
-	if ( g_ExeDir[0] == 0 )
-		strcpy_s( g_ExeDir, ".\\" );
-
-	V_FixSlashes( g_ExeDir );
-}
-
-static void SetupPaths( int argc, const char* argv[] )
-{
-	cmdLine.get( "-shaderpath" )->getString( g_pShaderPath );
-
-	g_bVerbose  = cmdLine.isSet( "-verbose" );
-	g_bVerbose2 = cmdLine.isSet( "-verbose2" );
+	std::cout << "\rCompiling " << clr::green << PrettyPrint( g_numCompileCommands ) << clr::reset << " commands, setup took " << clr::green << std::chrono::duration_cast<std::chrono::seconds>( tt_end - tt_start ).count() << clr::reset << " seconds.         \r";
 }
 
 static void CompileShaders()
@@ -2452,14 +1966,13 @@ static void WriteShaders()
 			// Compiler spew
 			for ( int k = 0, kEnd = msg.error.GetNumStrings(); k < kEnd; ++k )
 			{
-				const char* const szMsg    = msg.error.String( k );
-				const CompilerMsgInfo& cmi = msg.error[gsl::narrow<UtlSymId_t>( k )];
-
-				const char* const szFirstCmd = cmi.GetFirstCommand();
-				const int numReported        = cmi.GetNumTimesReported();
-
+				const char* const szMsg          = msg.error.String( k );
+				const CompilerMsgInfo& cmi       = msg.error[gsl::narrow<UtlSymId_t>( k )];
+				const char* const szFirstCmd     = cmi.GetFirstCommand();
+				const int numReported            = cmi.GetNumTimesReported();
 				uint64 iFirstCommand             = _strtoui64( szFirstCmd, nullptr, 10 );
 				CfgProcessor::ComboHandle hCombo = nullptr;
+
 				if ( CfgProcessor::Combo_GetNext( iFirstCommand, hCombo, g_numCompileCommands ) )
 				{
 					Combo_FormatCommand( hCombo, str );
@@ -2495,7 +2008,7 @@ static void WriteShaders()
 						++pBegin;
 
 					// Now parse all combo defines in [pBegin, pEnd]
-					while ( pBegin && *pBegin && ( pBegin < pEnd ) )
+					while ( pBegin && *pBegin && pBegin < pEnd )
 					{
 						const char* pDefine = strstr( pBegin, "/D" );
 						if ( !pDefine || pDefine >= pEnd )
@@ -2534,9 +2047,9 @@ static void WriteShaders()
 	//
 	// End
 	//
-	const double end = Plat::FloatTime();
+	const Clock::time_point end = Clock::now();
 
-	std::cout << clr::green << FormatTime( static_cast<uint64>( end - g_flStartTime ) ) << clr::reset << " elapsed                                           " << std::endl;
+	std::cout << clr::green << FormatTime( std::chrono::duration_cast<std::chrono::seconds>( end - g_flStartTime ).count() ) << clr::reset << " elapsed                                           " << std::endl;
 }
 
 namespace PreprocessorDbg
@@ -2588,7 +2101,7 @@ int main( int argc, const char* argv[] )
 	if ( cmdLine.isSet( "-verbose_preprocessor" ) )
 		PreprocessorDbg::s_bNoOutput = false;
 
-	g_flStartTime = Plat::FloatTime();
+	g_flStartTime = Clock::now();
 
 	if ( cmdLine.isSet( "/Gpp" ) )
 		gFlags |= D3DCOMPILE_PARTIAL_PRECISION;
@@ -2637,9 +2150,15 @@ int main( int argc, const char* argv[] )
 	}
 
 	// This needs to get called before VMPI is setup because in SDK mode, VMPI will change the args around.
-	SetupExeDir( argc, argv );
+	strcpy_s( g_ExeDir, argv[0] );
+	V_StripFilename( g_ExeDir );
+	if ( g_ExeDir[0] == 0 )
+		strcpy_s( g_ExeDir, ".\\" );
+	V_FixSlashes( g_ExeDir );
 
-	SetupPaths( argc, argv );
+	cmdLine.get( "-shaderpath" )->getString( g_pShaderPath );
+	g_bVerbose = cmdLine.isSet( "-verbose" );
+	g_bVerbose2 = cmdLine.isSet( "-verbose2" );
 
 	// Setting up the minidump handlers
 	SetUnhandledExceptionFilter( ToolsExceptionFilter );

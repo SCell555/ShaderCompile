@@ -22,9 +22,9 @@ template <class T, int HASHSIZE = 7907, class K = int>
 class CUtlNodeHash
 {
 	int m_nNumNodes;
-
-public:
 	CUtlIntrusiveDList<T> m_HashChains[HASHSIZE];
+public:
+	static constexpr int NumChains = HASHSIZE;
 
 	CUtlNodeHash()
 	{
@@ -33,11 +33,11 @@ public:
 
 	[[nodiscard]] T* FindByKey( K nMatchKey, int* pChainNumber = nullptr )
 	{
-		unsigned int nChain = static_cast<unsigned int>( nMatchKey );
-		nChain %= HASHSIZE;
+		nMatchKey %= HASHSIZE;
+		const unsigned int nChain = static_cast<unsigned int>( nMatchKey );
 		if ( pChainNumber )
 			*pChainNumber = nChain;
-		for ( T* pNode = m_HashChains[nChain].m_pHead; pNode; pNode = pNode->m_pNext )
+		for ( T* pNode = m_HashChains[nChain].Head(); pNode; pNode = pNode->Next() )
 			if ( pNode->Key() == nMatchKey )
 				return pNode;
 		return nullptr;
@@ -45,8 +45,7 @@ public:
 
 	void Add( T* pNode )
 	{
-		unsigned int nChain = static_cast<unsigned int>( pNode->Key() );
-		nChain %= HASHSIZE;
+		const unsigned int nChain = static_cast<unsigned int>( pNode->Key() % HASHSIZE );
 		m_HashChains[nChain].AddToHead( pNode );
 		m_nNumNodes++;
 	}
@@ -74,6 +73,8 @@ public:
 			m_nNumNodes--;
 		}
 	}
+
+	__forceinline const CUtlIntrusiveDList<T>& Chain( int nChain ) { return m_HashChains[nChain]; }
 
 	~CUtlNodeHash()
 	{

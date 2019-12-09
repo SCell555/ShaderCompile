@@ -80,6 +80,18 @@
     <ClInclude Include="..\shared\include\CRC32.hpp">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="LZMA.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="movingaverage.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="strmanip.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="termcolors.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\shared\gsl\GSL.natvis" />

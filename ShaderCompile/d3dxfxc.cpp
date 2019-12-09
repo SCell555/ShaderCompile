@@ -15,9 +15,6 @@
 #include <malloc.h>
 #include <vector>
 
-#define _SILENCE_STDEXT_HASH_DEPRECATION_WARNINGS
-#include <hash_map>
-
 #pragma comment( lib, "D3DCompiler" )
 
 CSharedFile::CSharedFile()
@@ -118,8 +115,7 @@ namespace Private
 {
 	struct DxIncludeImpl final : public ID3DInclude
 	{
-		STDMETHOD( Open )
-		( THIS_ D3D_INCLUDE_TYPE, LPCSTR pFileName, LPCVOID, LPCVOID* ppData, UINT* pBytes ) override
+		STDMETHOD( Open )( THIS_ D3D_INCLUDE_TYPE, LPCSTR pFileName, LPCVOID, LPCVOID* ppData, UINT* pBytes ) override
 		{
 			CSharedFile* file = fileCache.Get( pFileName );
 			if ( !file )
@@ -131,8 +127,7 @@ namespace Private
 			return S_OK;
 		}
 
-		STDMETHOD( Close )
-		( THIS_ LPCVOID ) override
+		STDMETHOD( Close )( THIS_ LPCVOID ) override
 		{
 			return S_OK;
 		}
