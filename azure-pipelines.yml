@@ -14,11 +14,13 @@ steps:
      platform: x64
  - task: CopyFiles@2
    inputs:
-     Contents: 'x64\Release\*.exe'
+     SourceFolder: 'x64\Release'
+     Contents: '*.exe'
      TargetFolder: $(Build.ArtifactStagingDirectory)
  - task: CopyFiles@2
    inputs:
-     Contents: 'scripts\*'
+     SourceFolder: 'scripts'
+     Contents: '**'
      TargetFolder: $(Build.ArtifactStagingDirectory)
  - task: PublishPipelineArtifact@1
    inputs:
