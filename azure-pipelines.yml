@@ -16,6 +16,10 @@ steps:
    inputs:
      Contents: 'x64\Release\*.exe'
      TargetFolder: $(Build.ArtifactStagingDirectory)
+ - task: CopyFiles@2
+   inputs:
+     Contents: 'scripts\*'
+     TargetFolder: $(Build.ArtifactStagingDirectory)
  - task: PublishPipelineArtifact@1
    inputs:
      targetPath: $(Build.ArtifactStagingDirectory)

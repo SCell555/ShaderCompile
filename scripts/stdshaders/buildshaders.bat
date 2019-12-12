@@ -25,28 +25,14 @@ set shadercompilecommand=ShaderCompile.exe
 set targetdir=shaders
 set SrcDirBase=..\..
 set shaderDir=shaders
-set SDKArgs=
-set SHADERINCPATH=vshtmp9/... fxctmp9/...
-set VALVE_VERBOSE_COMBO_ERRORS=1
+set SDKArgs=-local
 
 if "%1" == "" goto usage
 set inputbase=%1
 
-set DIRECTX_SDK_VER=pc09.00
-set DIRECTX_SDK_BIN_DIR=dx9sdk\utilities
-
-if /i "%6" == "-dx9_30" goto dx_sdk_dx9_30
-goto dx_sdk_end
-:dx_sdk_dx9_30
-			set DIRECTX_SDK_VER=pc09.30
-			set DIRECTX_SDK_BIN_DIR=dx10sdk\utilities\dx9_30
-			goto dx_sdk_end
-:dx_sdk_end
-
-if /i "%7" == "-force30" goto set_force30_arg
-goto set_force_end
+if /i "%6" == "-force30" goto set_force30_arg
 :set_force30_arg
-			set DIRECTX_FORCE_MODEL=30
+			set IS30=1
 			goto set_force_end
 :set_force_end
 
@@ -71,14 +57,11 @@ REM ****************
 :set_mod_args
 
 if not exist "..\..\devtools\bin\ShaderCompile.exe" goto NoShaderCompile
+if not exist "..\..\devtools\bin\ShaderCrc.exe" goto NoShaderCrc
 set ChangeToDir=%SrcDirBase%\devtools\bin\
 
 if /i "%4" NEQ "-source" goto NoSourceDirSpecified
 set SrcDirBase=%~5
-
-REM ** use the -game parameter to tell us where to put the files
-set targetdir=%~3\shaders
-set SDKArgs=
 
 if not exist "%~3\gameinfo.txt" goto InvalidGameDirectory
 goto build_shaders
@@ -97,7 +80,11 @@ goto usage
 goto end
 
 :NoShaderCompile
-echo - ERROR: shadercompile.exe doesn't exist in devtools\bin
+echo - ERROR: ShaderCompile.exe doesn't exist in devtools\bin
+goto end
+
+:NoShaderCompile
+echo - ERROR: ShaderCrc.exe doesn't exist in devtools\bin
 goto end
 
 REM ****************
@@ -110,66 +97,38 @@ rem echo %inputbase%
 rem echo --------------------------------
 REM make sure that target dirs exist
 REM files will be built in these targets and copied to their final destination
+if not exist include mkdir include
 if not exist %shaderDir% mkdir %shaderDir%
 if not exist %shaderDir%\fxc mkdir %shaderDir%\fxc
-if not exist %shaderDir%\vsh mkdir %shaderDir%\vsh
-if not exist %shaderDir%\psh mkdir %shaderDir%\psh
 REM Nuke some files that we will add to later.
-if exist filelist.txt del /f /q filelist.txt
-if exist filestocopy.txt del /f /q filestocopy.txt
-if exist filelistgen.txt del /f /q filelistgen.txt
-if exist inclist.txt del /f /q inclist.txt
-if exist vcslist.txt del /f /q vcslist.txt
+if exist "%inputbase%_work.json" del /f /q "%inputbase%_work.json"
 
-set SHVER=20x
+set SHVER=20b
 
-if /i "%DIRECTX_SDK_VER%" == "pc09.30" (
+if defined IS30 (
 	set SHVER=30
 )
 
 title %1 %SHVER%
 
-REM ****************
-REM Generate a makefile for the shader project
-REM ****************
-perl "%SrcDirBase%\devtools\bin\updateshaders.pl" -source "%SrcDirBase%" %inputbase%
+echo Building inc files and worklist for %inputbase%...
 
+set DYNAMIC=
+if "%dynamic_shaders%" == "1" set DYNAMIC=-d
 
-REM ****************
-REM Run the makefile, generating minimal work/build list for fxc files, go ahead and compile vsh and psh files.
-REM ****************
-rem nmake /S /C -f makefile.%inputbase% clean > clean.txt 2>&1
-echo Building inc files, asm vcs files, and VMPI worklist for %inputbase%...
-nmake /S /C -f makefile.%inputbase%
-
-REM ****************
-REM Copy the inc files to their target
-REM ****************
-if exist "inclist.txt" (
-	echo Publishing shader inc files to target...
-	perl %SrcDirBase%\devtools\bin\copyshaderincfiles.pl inclist.txt
-)
-
-REM ****************
-REM Cull duplicate entries in work/build list
-REM ****************
-if exist filestocopy.txt type filestocopy.txt | perl "%SrcDirBase%\devtools\bin\uniqifylist.pl" > uniquefilestocopy.txt
-if exist filelistgen.txt if not "%dynamic_shaders%" == "1" (
-    echo Generating action list...
-    copy filelistgen.txt filelist.txt >nul
-)
+py "%SrcDirBase%\devtools\bin\prepare_shaders.py" %DYNAMIC% -v %SHVER% "%inputbase%.txt"
 
 REM ****************
 REM Execute distributed process on work/build list
 REM ****************
 
 set shader_path_cd=%cd%
-if exist "filelist.txt" if exist "uniquefilestocopy.txt" if not "%dynamic_shaders%" == "1" (
+if exist "%inputbase%_work.json" if not "%dynamic_shaders%" == "1" (
 	rem echo Running distributed shader compilation...
 
 	cd /D %ChangeToDir%
-	echo %shadercompilecommand% %SDKArgs% -shaderpath "%shader_path_cd:/=\%"
-	%shadercompilecommand% %SDKArgs% -shaderpath "%shader_path_cd:/=\%"
+	echo %shadercompilecommand% %SDKArgs% -shaderpath "%shader_path_cd:/=\%" -config "%inputbase%_work.json"
+	%shadercompilecommand% %SDKArgs% -shaderpath "%shader_path_cd:/=\%" -config "%inputbase%_work.json"
 	cd /D %shader_path_cd%
 )
 

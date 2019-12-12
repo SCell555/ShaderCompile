@@ -108,8 +108,8 @@ FileCache fileCache;
 namespace InterceptFxc
 {
 // The command that is intercepted by this namespace routines
-static constexpr const char s_pszCommand[] = "fxc.exe ";
-static constexpr size_t s_uCommandLen      = ARRAYSIZE( s_pszCommand ) - 1;
+static constexpr const char s_pszCommand[] = "command";
+static constexpr size_t s_uCommandLen      = ARRAYSIZE( s_pszCommand );
 
 namespace Private
 {
@@ -239,82 +239,29 @@ void ExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, DWOR
 	Assert( !strncmp( pCommand, s_pszCommand, s_uCommandLen ) );
 	pCommand += s_uCommandLen;
 
-	const size_t len = strlen( pCommand );
-	// A duplicate portion of memory for modifications
-	char* pEditableCommand = static_cast<char*>( alloca( len + 1 ) );
-	strcpy_s( pEditableCommand, len + 1, pCommand );
-
 	// Macros to be defined for D3DX
 	std::vector<D3D_SHADER_MACRO> macros;
 
-	// Shader model (determined when parsing "/D" flags)
-	const char* pszShaderModel = nullptr;
-
-	// Iterate over the command line and find all "/D...=..." settings
-	for ( char* pszFlag = pEditableCommand; pszFlag && ( pszFlag = strstr( pszFlag, "/D" ) ) != nullptr; /* advance inside */ )
+	const char* curIter = pCommand;
+	char const* pszFilename = curIter;
+	curIter += strlen( curIter ) + 1;
+	char const* szShaderModel = curIter;
+	curIter += strlen( curIter ) + 1;
+	while ( *curIter )
 	{
-		// Make sure this is a command-line flag (basic check for preceding space)
-		if ( pszFlag > pEditableCommand && pszFlag[-1] && ' ' != pszFlag[-1] )
-		{
-			++pszFlag;
-			continue;
-		}
-
-		// Name is immediately after "/D"
-		char* pszFlagName = pszFlag + 2; // 2 = length of "/D"
-		// Value will be determined later
-		const char* pszValue = "";
-
-		if ( char* pchEq = strchr( pszFlag, '=' ) )
-		{
-			// Value is after '=' sign
-			*pchEq   = 0;
-			pszValue = pchEq + 1;
-			pszFlag  = pchEq + 1;
-		}
-
-		if ( char* pchSpace = strchr( pszFlag, ' ' ) )
-		{
-			// Space is designating the end of the flag
-			*pchSpace = 0;
-			pszFlag   = pchSpace + 1;
-		}
-		else
-			// Reached end of command line
-			pszFlag = nullptr;
-
-		// Shader model extraction
-		if ( !strncmp( pszFlagName, "SHADER_MODEL_", 13 ) )
-			pszShaderModel = pszFlagName + 13;
-
-		// Add the macro definition to the macros array
-		macros.emplace_back( D3D_SHADER_MACRO { pszFlagName, pszValue } );
+		D3D_SHADER_MACRO macro;
+		macro.Name = curIter;
+		curIter += strlen( curIter ) + 1;
+		macro.Definition = curIter;
+		curIter += strlen( curIter ) + 1;
+		macros.emplace_back( std::move( macro ) );
 	}
 
 	// Add a NULL-terminator
 	macros.emplace_back( D3D_SHADER_MACRO { nullptr, nullptr } );
 
-	// Convert shader model to lowercase
-	char chShaderModel[20] = { 0 };
-	if ( pszShaderModel )
-		strcpy_s( chShaderModel, pszShaderModel );
-	_strlwr_s( chShaderModel );
-
-	// Determine the file name (at the end of the command line before redirection)
-	char const* pszFilename = "";
-	if ( const char* pchCmdRedirect = strstr( pCommand, ">output.txt " ) )
-	{
-		const size_t uCmdEndOffset = ( pchCmdRedirect - pCommand );
-
-		pEditableCommand[uCmdEndOffset] = 0;
-		pszFilename                     = &pEditableCommand[uCmdEndOffset];
-
-		while ( pszFilename > pEditableCommand && pszFilename[-1] && ' ' != pszFilename[-1] )
-			--pszFilename;
-	}
-
 	// Compile the stuff
-	Private::FastShaderCompile( pszFilename, macros, chShaderModel, ppResponse, flags );
+	Private::FastShaderCompile( pszFilename, macros, szShaderModel, ppResponse, flags );
 }
 
 bool TryExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, DWORD flags )

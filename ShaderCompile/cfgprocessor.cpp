@@ -7,6 +7,7 @@
 //=============================================================================//
 
 #include "cfgprocessor.h"
+#include "d3dxfxc.h"
 
 #include "utlbuffer.h"
 #include <algorithm>
@@ -18,9 +19,12 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <fstream>
 
+#include "json/json.h"
 #include "termcolor/style.hpp"
 #include "termcolors.hpp"
+#include "strmanip.hpp"
 
 // Type conversions should be controlled by programmer explicitly - shadercompile makes use of 64-bit integer arithmetics
 #pragma warning( error : 4244 )
@@ -565,6 +569,10 @@ void CComplexExpression::Clear()
 class ComboGenerator : public IEvaluationContext
 {
 public:
+	ComboGenerator() = default;
+	ComboGenerator( const ComboGenerator& ) = default;
+	ComboGenerator( ComboGenerator&& old ) noexcept : m_arrDefines( std::move( old.m_arrDefines ) ), m_mapDefines( std::move( old.m_mapDefines ) ), m_arrVarSlots( std::move( old.m_arrVarSlots ) ) {}
+
 	void AddDefine( Define const& df );
 	[[nodiscard]] Define const* GetDefinesBase() const { return m_arrDefines.data(); }
 	[[nodiscard]] Define const* GetDefinesEnd() const { return m_arrDefines.data() + m_arrDefines.size(); }
@@ -611,6 +619,8 @@ uint64 ComboGenerator::NumCombos( bool bStaticCombos ) const
 		[bStaticCombos]( const Define& d ) { return d.IsStatic() == bStaticCombos ? static_cast<uint64>( d.Max() ) - d.Min() + 1ULL : 1ULL; } );
 }
 
+extern std::string g_pShaderPath;
+extern bool g_bVerbose;
 namespace ConfigurationProcessing
 {
 class CfgEntry
@@ -635,13 +645,11 @@ public:
 	char const* m_szShaderSrc;
 	ComboGenerator* m_pCg;
 	CComplexExpression* m_pExpr;
-	std::string m_sPrefix;
-	std::string m_sSuffix;
 
 	CfgProcessor::CfgEntryInfo m_eiInfo;
 };
 
-static std::set<std::string> s_uniqueSections, s_strPool;
+static std::set<std::string> s_strPool;
 static std::multiset<CfgEntry> s_setEntries;
 
 class ComboHandleImpl : public IEvaluationContext
@@ -671,6 +679,7 @@ public:
 	bool NextNotSkipped( uint64 iTotalCommand );
 	bool IsSkipped() { return m_pEntry->m_pExpr->Evaluate( this ) != 0; }
 	void FormatCommand( gsl::span<char> pchBuffer );
+	void FormatCommandHumanReadable( gsl::span<char> pchBuffer );
 };
 
 static std::map<uint64, ComboHandleImpl> s_mapComboCommands;
@@ -781,14 +790,56 @@ void ComboHandleImpl::FormatCommand( gsl::span<char> pchBuffer )
 
 	{
 		// ------- OnCombo( nCurrentCombo ); ----------
-		int o = sprintf_s( pchBuffer.data(), pchBuffer.size(), "%s ", m_pEntry->m_sPrefix.c_str() );
+		int o = sprintf_s( pchBuffer.data(), pchBuffer.size(), "command" ) + 1;
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", m_pEntry->m_szShaderSrc ) + 1;
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", m_pEntry->m_eiInfo.m_szShaderVersion ) + 1;
 
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "/DSHADERCOMBO=%llx ", m_iComboNumber );
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "SHADERCOMBO" ) + 1;
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%llx", m_iComboNumber ) + 1;
+
+		char version[20];
+		strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion );
+		_strupr_s( version );
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "SHADER_MODEL_%s", version ) + 1;
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "1" ) + 1;
+
+		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd; ++pSetValues, ++pSetDef )
+		{
+			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", pSetDef->Name() ) + 1;
+			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%d", *pSetValues ) + 1;
+		}
+
+		pchBuffer[o] = '\0';
+		pchBuffer[o + 1LL] = '\0';
+		// ------- end of OnCombo ---------------------
+	}
+}
+
+void ComboHandleImpl::FormatCommandHumanReadable( gsl::span<char> pchBuffer )
+{
+	// Get the pointers
+	const int* const pnValues = m_arrVarSlots.data();
+	const int* const pnValuesEnd = pnValues + m_arrVarSlots.size();
+	const int* pSetValues;
+
+	// Defines
+	Define const* const pDefVars = m_pEntry->m_pCg->GetDefinesBase();
+	Define const* pSetDef;
+
+	{
+		// ------- OnCombo( nCurrentCombo ); ----------
+		int o = sprintf_s( pchBuffer.data(), pchBuffer.size(), "fxc.exe /DCENTROIDMASK=%d ", m_pEntry->m_eiInfo.m_nCentroidMask );
+
+		char version[20];
+		strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion );
+		_strupr_s( version );
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "/DSHADERCOMBO=%llx /DSHADER_MODEL_%s=1 /T%s /Emain",
+			m_iComboNumber, version, m_pEntry->m_eiInfo.m_szShaderVersion );
 
 		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd; ++pSetValues, ++pSetDef )
 			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "/D%s=%d ", pSetDef->Name(), *pSetValues );
 
-		sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s\n", m_pEntry->m_sSuffix.data() );
+		sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", m_pEntry->m_szShaderSrc );
 		// ------- end of OnCombo ---------------------
 	}
 }
@@ -801,140 +852,90 @@ static struct CAutoDestroyEntries
 	}
 } s_autoDestroyEntries;
 
-static CUtlInplaceBuffer*& GetInputStream()
+static void ProcessConfiguration( const char* pConfigFile )
 {
-	static CUtlInplaceBuffer* s_fInput = nullptr;
-	return s_fInput;
-}
-
-static char* GetLinePtr_Private()
-{
-	if ( CUtlInplaceBuffer* pUtlBuffer = GetInputStream() )
-		return pUtlBuffer->InplaceGetLinePtr();
-
-	return nullptr;
-}
-
-static bool LineEquals( char const* sz1, char const* sz2, int nLen )
-{
-	return 0 == strncmp( sz1, sz2, nLen );
-}
-
-static char* NextLine()
-{
-	if ( char* szLine = GetLinePtr_Private() )
 	{
-		// Trim trailing whitespace as well
-		size_t len = strlen( szLine );
-		while ( len-- > 0 && isspace( szLine[len] ) )
-			szLine[len] = 0;
-		return szLine;
-	}
-	return nullptr;
-}
-
-static char* WaitFor( char const* szWaitString, int nMatchLength )
-{
-	while ( char* pchResult = NextLine() )
-		if ( LineEquals( pchResult, szWaitString, nMatchLength ) )
-			return pchResult;
-
-	return nullptr;
-}
-
-static bool ProcessSection( CfgEntry& cfge )
-{
-	bool bStaticDefines;
-
-	// Read the next line for the section src file
-	if ( char* szLine = NextLine() )
-		cfge.m_szShaderSrc = s_strPool.emplace( szLine ).first->c_str();
-
-	if ( char* szLine = WaitFor( "#DEFINES-", 9 ) )
-		bStaticDefines = szLine[9] == 'S';
-	else
-		return false;
-
-	// Combo generator
-	ComboGenerator& cg           = *( cfge.m_pCg = new ComboGenerator );
-	CComplexExpression& exprSkip = *( cfge.m_pExpr = new CComplexExpression( &cg ) );
-
-	// #DEFINES:
-	while ( char* szLine = NextLine() )
-	{
-		if ( LineEquals( szLine, "#SKIP", 5 ) )
-			break;
-
-		// static defines
-		if ( LineEquals( szLine, "#DEFINES-", 9 ) )
+		std::set<std::string> usedFiles;
+		Json::Value configFile;
 		{
-			bStaticDefines = szLine[9] == 'S';
-			continue;
+			Json::CharReaderBuilder builder;
+			std::ifstream file( pConfigFile );
+			JSONCPP_STRING errors;
+			parseFromStream( builder, file, &configFile, &errors );
 		}
 
-		while ( *szLine && isspace( *szLine ) )
-			++szLine;
+		const auto& AddCombos = []( ComboGenerator& cg, const Json::Value& combos, bool staticC )
+		{
+			for ( const Json::Value& combo : combos )
+				cg.AddDefine( Define( combo["name"].asCString(), combo["minVal"].asInt(), combo["maxVal"].asInt(), staticC ) );
+		};
 
-		// Find the eq
-		char* pchEq = strchr( szLine, '=' );
-		if ( !pchEq )
-			continue;
+		const Json::Value::Members& shaders = configFile.getMemberNames();
+		for ( const auto& shader : shaders )
+		{
+			const Json::Value& curShader = configFile[shader];
+			const Json::Value& sourceFiles = curShader["files"]; // first file is shader
+			const Json::Value& staticCombos = curShader["static"];
+			const Json::Value& dynamicCombos = curShader["dynamic"];
 
-		char* pchStartRange = pchEq + 1;
-		*pchEq              = 0;
-		while ( --pchEq >= szLine && isspace( *pchEq ) )
-			*pchEq = 0;
-		if ( !*szLine )
-			continue;
+			CfgEntry cfg;
+			cfg.m_szName = s_strPool.emplace( shader ).first->c_str();
+			cfg.m_szShaderSrc = s_strPool.emplace( sourceFiles[0].asString() ).first->c_str();
+			// Combo generator
+			ComboGenerator& cg				= *( cfg.m_pCg = new ComboGenerator );
+			CComplexExpression& exprSkip	= *( cfg.m_pExpr = new CComplexExpression( &cg ) );
 
-		// Find the end of range
-		char* pchEndRange = strstr( pchStartRange, ".." );
-		if ( !pchEndRange )
-			continue;
-		pchEndRange += 2;
+			AddCombos( cg, dynamicCombos, false );
+			AddCombos( cg, staticCombos, true );
+			exprSkip.Parse( curShader["skip"].asCString() );
 
-		// Create the define
-		Define df( szLine, atoi( pchStartRange ), atoi( pchEndRange ), bStaticDefines );
-		if ( df.Max() < df.Min() )
-			continue;
+			CfgProcessor::CfgEntryInfo& info = cfg.m_eiInfo;
+			info.m_szName = cfg.m_szName;
+			info.m_szShaderFileName = cfg.m_szShaderSrc;
+			info.m_szShaderVersion = s_strPool.emplace( curShader["version"].asString() ).first->c_str();
+			info.m_numCombos = cg.NumCombos();
+			info.m_numDynamicCombos = cg.NumCombos( false );
+			info.m_numStaticCombos = cg.NumCombos( true );
+			info.m_nCentroidMask = curShader["centroid"].asInt();
 
-		// Add the define
-		cg.AddDefine( df );
-	}
+			s_setEntries.insert( std::move( cfg ) );
 
-	// #SKIP:
-	if ( char* szLine = NextLine() )
-		exprSkip.Parse( szLine );
-	else
-		return false;
+			for ( const Json::Value& f : sourceFiles )
+				usedFiles.emplace( f.asString() );
+		}
 
-	// #COMMAND:
-	if ( !WaitFor( "#COMMAND", 8 ) )
-		return false;
-	if ( char* szLine = NextLine() )
-		cfge.m_sPrefix = szLine;
-	if ( char* szLine = NextLine() )
-		cfge.m_sSuffix = szLine;
+		char filename[1024];
+		for ( const std::string& file : usedFiles )
+		{
+			if ( V_IsAbsolutePath( file.c_str() ) )
+				strcpy_s( filename, file.c_str() );
+			else
+				sprintf_s( filename, "%s\\%s", g_pShaderPath.c_str(), file.c_str() );
 
-	// #END
-	if ( !WaitFor( "#END", 4 ) )
-		return false;
+			std::ifstream src( filename, std::ios::binary | std::ios::ate );
+			if ( !src )
+			{
+				std::cout << clr::pinkish << "Can't find \"" << clr::red << filename << clr::pinkish << "\"" << std::endl;
+				continue;
+			}
 
-	return true;
-}
+			char justFilename[MAX_PATH];
+			const char* pLastSlash = Max( strrchr( file.c_str(), '/' ), strrchr( file.c_str(), '\\' ) );
+			if ( pLastSlash )
+				strcpy_s( justFilename, pLastSlash + 1 );
+			else
+				strcpy_s( justFilename, file.c_str() );
 
-static void ProcessConfiguration()
-{
-	while ( char* szLine = WaitFor( "#BEGIN", 6 ) )
-	{
-		const auto& f = s_uniqueSections.emplace( szLine + 7 );
-		if ( ' ' == szLine[6] && !f.second )
-			continue;
+			if ( g_bVerbose )
+				std::cout << "adding file to cache: \"" << clr::green << justFilename << clr::reset << "\"" << std::endl;
 
-		CfgEntry cfge;
-		cfge.m_szName = f.first->c_str();
-		ProcessSection( cfge );
-		s_setEntries.insert( cfge );
+			std::vector<char> data( gsl::narrow<size_t>( src.tellg() ) );
+			src.clear();
+			src.seekg( 0, std::ios::beg );
+			src.read( data.data(), data.size() );
+
+			fileCache.Add( justFilename, reinterpret_cast<const uint8*>( data.data() ), data.size() );
+		}
 	}
 
 	uint64 nCurrentCommand = 0;
@@ -985,10 +986,9 @@ static ComboHandle AsHandle( CPCHI_t* pImpl )
 	return reinterpret_cast<ComboHandle>( pImpl );
 }
 
-void ReadConfiguration( CUtlInplaceBuffer* fInputStream )
+void ReadConfiguration( const char* configFile )
 {
-	CAutoPushPop pushInputStream( ConfigurationProcessing::GetInputStream(), fInputStream );
-	ConfigurationProcessing::ProcessConfiguration();
+	ConfigurationProcessing::ProcessConfiguration( configFile );
 }
 
 void DescribeConfiguration( std::unique_ptr<CfgEntryInfo[]>& rarrEntries )
@@ -1000,15 +1000,11 @@ void DescribeConfiguration( std::unique_ptr<CfgEntryInfo[]>& rarrEntries )
 
 	for ( auto it = ConfigurationProcessing::s_setEntries.rbegin(), itEnd = ConfigurationProcessing::s_setEntries.rend(); it != itEnd; ++it, ++pInfo )
 	{
+		const ConfigurationProcessing::CfgEntry& f = *it;
 		ConfigurationProcessing::CfgEntry const& e = *it;
-
-		pInfo->m_szName           = e.m_szName;
-		pInfo->m_szShaderFileName = e.m_szShaderSrc;
+		*pInfo = e.m_eiInfo;
 
 		pInfo->m_iCommandStart    = nCurrentCommand;
-		pInfo->m_numCombos        = e.m_pCg->NumCombos();
-		pInfo->m_numDynamicCombos = e.m_pCg->NumCombos( false );
-		pInfo->m_numStaticCombos  = e.m_pCg->NumCombos( true );
 		pInfo->m_iCommandEnd      = pInfo->m_iCommandStart + pInfo->m_numCombos;
 
 		const_cast<CfgEntryInfo&>( e.m_eiInfo ) = *pInfo;
@@ -1137,6 +1133,12 @@ void Combo_FormatCommand( ComboHandle hCombo, gsl::span<char> pchBuffer )
 {
 	CPCHI_t* pImpl = FromHandle( hCombo );
 	pImpl->FormatCommand( pchBuffer );
+}
+
+void Combo_FormatCommandHumanReadable( ComboHandle hCombo, gsl::span<char> pchBuffer )
+{
+	CPCHI_t* pImpl = FromHandle( hCombo );
+	pImpl->FormatCommandHumanReadable( pchBuffer );
 }
 
 uint64 Combo_GetCommandNum( ComboHandle hCombo )

@@ -175,6 +175,7 @@
   <ItemGroup>
     <ClCompile Include="cfgprocessor.cpp" />
     <ClCompile Include="d3dxfxc.cpp" />
+    <ClCompile Include="include\jsoncpp.cpp" />
     <ClCompile Include="ShaderCompile.cpp" />
     <ClCompile Include="subprocess.cpp" />
     <ClCompile Include="utlbuffer.cpp" />

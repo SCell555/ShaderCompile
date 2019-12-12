@@ -72,10 +72,11 @@ static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> g_arrCompileEntries;
 static uint64 g_numShaders = 0, g_numCompileCommands = 0, g_numStaticCombos = 0;
 
 using Clock = std::chrono::high_resolution_clock;
-static std::string g_pShaderPath;
+std::string g_pShaderPath;
+static std::string g_pShaderConfigFile;
 static char g_ExeDir[MAX_PATH];
 static Clock::time_point g_flStartTime;
-static bool g_bVerbose  = false;
+bool g_bVerbose         = false;
 static bool g_bVerbose2 = false;
 
 struct ShaderInfo_t
@@ -1386,7 +1387,7 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 		}
 
 		char chBuffer[4096];
-		Combo_FormatCommand( hCombo, chBuffer );
+		Combo_FormatCommandHumanReadable( hCombo, chBuffer );
 
 		GLOBAL_DATA_MTX_LOCK();
 		ErrMsgDispatchMsgLine( chBuffer, szListing, pEntryInfo->m_szName );
@@ -1650,125 +1651,22 @@ static void Shader_ParseShaderInfoFromCompileCommands( const CfgProcessor::CfgEn
 {
 	if ( CfgProcessor::ComboHandle hCombo = CfgProcessor::Combo_GetCombo( pEntry->m_iCommandStart ) )
 	{
-		char cmd[4096] = { 0 };
-		Combo_FormatCommand( hCombo, cmd );
+		CfgProcessor::CfgEntryInfo const* info = Combo_GetEntryInfo( hCombo );
 
-		{
-			memset( &shaderInfo, 0, sizeof( ShaderInfo_t ) );
+		memset( &shaderInfo, 0, sizeof( ShaderInfo_t ) );
 
-			const char* pCentroidMask = strstr( cmd, "/DCENTROIDMASK=" );
-			const char* pFlags        = strstr( cmd, "/DFLAGS=0x" );
-			const char* pShaderModel  = strstr( cmd, "/DSHADER_MODEL_" );
+		strcpy_s( shaderInfo.m_szShaderModel, info->m_szShaderVersion );
+		shaderInfo.m_CentroidMask       = info->m_nCentroidMask;
+		shaderInfo.m_Flags              = 0; // not filled out by anything?
+		shaderInfo.m_nShaderCombo       = 0;
+		shaderInfo.m_nTotalShaderCombos = pEntry->m_numCombos;
+		shaderInfo.m_nDynamicCombos     = pEntry->m_numDynamicCombos;
+		shaderInfo.m_nStaticCombo       = 0;
 
-			if ( !pCentroidMask || !pFlags || !pShaderModel )
-			{
-				Assert( !"!pCentroidMask || !pFlags || !pShaderModel" );
-				return;
-			}
-
-			sscanf_s( pCentroidMask + STATIC_STRLEN( "/DCENTROIDMASK=" ), "%u", &shaderInfo.m_CentroidMask );
-			sscanf_s( pFlags + STATIC_STRLEN( "/DFLAGS=0x" ), "%x", &shaderInfo.m_Flags );
-
-			// Copy shader model
-			pShaderModel += STATIC_STRLEN( "/DSHADER_MODEL_" );
-			for ( char *pszSm = shaderInfo.m_szShaderModel, *const pszEnd = pszSm + sizeof( shaderInfo.m_szShaderModel ) - 1; pszSm < pszEnd; ++pszSm )
-			{
-				char& rchLastChar = *pszSm = *pShaderModel++;
-				if ( !rchLastChar || isspace( rchLastChar ) || '=' == rchLastChar )
-				{
-					rchLastChar = 0;
-					break;
-				}
-			}
-
-			shaderInfo.m_nShaderCombo       = 0;
-			shaderInfo.m_nTotalShaderCombos = pEntry->m_numCombos;
-			shaderInfo.m_nDynamicCombos     = pEntry->m_numDynamicCombos;
-			shaderInfo.m_nStaticCombo       = 0;
-
-			shaderInfo.m_pShaderName = pEntry->m_szName;
-			shaderInfo.m_pShaderSrc  = pEntry->m_szShaderFileName;
-		}
+		shaderInfo.m_pShaderName = pEntry->m_szName;
+		shaderInfo.m_pShaderSrc  = pEntry->m_szShaderFileName;
 
 		Combo_Free( hCombo );
-	}
-}
-
-static bool ReadFile( const char* fileName, CUtlBuffer& buf )
-{
-	std::ifstream file( fileName, std::ios::binary | std::ios::ate );
-	if ( file.fail() )
-		return false;
-	std::vector<char> data( gsl::narrow<size_t>( file.tellg() ) );
-	{
-		const auto& find = []( const char& a, const char& b ) {
-			return a == '\r' && b == '\n';
-		};
-		file.clear();
-		file.seekg( 0, std::ios::beg );
-		file.read( data.data(), data.size() );
-		for ( std::vector<char>::iterator i; ( i = std::adjacent_find( data.begin(), data.end(), find ) ) != data.end(); )
-			data.erase( i );
-
-		const int size = gsl::narrow<int>( data.size() );
-		buf.EnsureCapacity( size );
-		memcpy( static_cast<char*>( buf.PeekPut() ), data.data(), size );
-		buf.SeekPut( CUtlBuffer::SEEK_CURRENT, size );
-	}
-
-	return true;
-}
-
-static void Worker_GetLocalCopyOfShaders()
-{
-	// Create virtual files for all of the stuff that we need to compile the shader
-	// make sure and prefix the file name so that it doesn't find it locally.
-
-	char filename[1024];
-	sprintf_s( filename, "%s\\uniquefilestocopy.txt", g_pShaderPath.c_str() );
-
-	CUtlInplaceBuffer bffr( 0, 0, CUtlBuffer::TEXT_BUFFER );
-	if ( !ReadFile( filename, bffr ) )
-	{
-		std::cout << clr::pinkish << "Can't open " << clr::red << "uniquefilestocopy.txt" << clr::pinkish << "!" << clr::reset << std::endl;
-		exit( -1 );
-	}
-
-	while ( char* pszLineToCopy = bffr.InplaceGetLinePtr() )
-	{
-		const char* ext = V_GetFileExtension( pszLineToCopy );
-		V_StrTrim( pszLineToCopy );
-		if ( _stricmp( "h", ext ) && _stricmp( "fxc", ext ) )
-			continue;
-
-		if ( V_IsAbsolutePath( pszLineToCopy ) )
-			strcpy_s( filename, pszLineToCopy );
-		else
-			sprintf_s( filename, "%s\\%s", g_pShaderPath.c_str(), pszLineToCopy );
-
-		std::ifstream src( filename, std::ios::binary | std::ios::ate );
-		if ( !src )
-		{
-			std::cout << clr::pinkish << "Can't find \"" << clr::red << filename << clr::pinkish << "\"" << std::endl;
-			continue;
-		}
-
-		char justFilename[MAX_PATH];
-		char* pLastSlash = Max( strrchr( pszLineToCopy, '/' ), strrchr( pszLineToCopy, '\\' ) );
-		if ( pLastSlash )
-			strcpy_s( justFilename, pLastSlash + 1 );
-		else
-			strcpy_s( justFilename, pszLineToCopy );
-
-		if ( g_bVerbose )
-			std::cout << "adding file to cache: \"" << clr::green << justFilename << clr::reset << "\"" << std::endl;
-
-		std::vector<char> data( gsl::narrow<size_t>( src.tellg() ) );
-		src.clear();
-		src.seekg( 0, std::ios::beg );
-		src.read( data.data(), data.size() );
-
-		fileCache.Add( justFilename, reinterpret_cast<const uint8*>( data.data() ), data.size() );
 	}
 }
 
@@ -1777,16 +1675,18 @@ static void Shared_ParseListOfCompileCommands()
 	const Clock::time_point tt_start = Clock::now();
 
 	char fileListFileName[1024];
-	sprintf_s( fileListFileName, "%s\\filelist.txt", g_pShaderPath.c_str() );
+	if ( V_IsAbsolutePath( g_pShaderConfigFile.c_str() ) )
+		strcpy_s( fileListFileName, g_pShaderConfigFile.c_str() );
+	else
+		sprintf_s( fileListFileName, "%s\\%s", g_pShaderPath.c_str(), g_pShaderConfigFile.c_str() );
 
-	CUtlInplaceBuffer bffr( 0, 0, CUtlInplaceBuffer::TEXT_BUFFER );
-	if ( !ReadFile( fileListFileName, bffr ) )
+	if ( !( _access( fileListFileName, 0 ) != -1 ) )
 	{
 		std::cout << clr::pinkish << "Can't open \"" << clr::red << fileListFileName << clr::pinkish << "\"!" << clr::reset << std::endl;
 		exit( -1 );
 	}
 
-	CfgProcessor::ReadConfiguration( &bffr );
+	CfgProcessor::ReadConfiguration( fileListFileName );
 	CfgProcessor::DescribeConfiguration( g_arrCompileEntries );
 
 	for ( const CfgProcessor::CfgEntryInfo* pInfo = g_arrCompileEntries.get(); pInfo && pInfo->m_szName; ++pInfo )
@@ -1936,7 +1836,7 @@ static void WriteShaders()
 			s.erase( std::find_if( s.rbegin(), s.rend(), []( int ch ) { return !std::isspace( ch ); } ).base(), s.end() );
 			return s;
 		};
-		const std::regex cmdReplaceReg( "(/Dmain=main| /nologo /Foshader.o|>output.txt 2>&1)" );
+
 		char cwd[_MAX_PATH];
 		_getcwd( cwd, sizeof( cwd ) );
 		const size_t cwdLen = strlen( cwd ) + 1;
@@ -1973,63 +1873,47 @@ static void WriteShaders()
 				uint64 iFirstCommand             = _strtoui64( szFirstCmd, nullptr, 10 );
 				CfgProcessor::ComboHandle hCombo = nullptr;
 
+				bool skip = false;
 				if ( CfgProcessor::Combo_GetNext( iFirstCommand, hCombo, g_numCompileCommands ) )
 				{
 					Combo_FormatCommand( hCombo, str );
 					Combo_Free( hCombo );
 				}
 				else
+				{
 					sprintf_s( str, "cmd # %s", szFirstCmd );
+					skip = true;
+				}
 
 				std::string m     = trim( szMsg );
 				const size_t find = m.find( cwd );
 				std::cout << std::quoted( find != std::string::npos ? m.replace( find, cwdLen, "" ) : m ) << "\nReported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
 
-				if ( bValveVerboseComboErrors )
+				if ( bValveVerboseComboErrors && !skip )
 				{
 					std::cout << "    Verbose Description:\n";
 
-					// Between     /DSHADERCOMBO=   and    /Dmain
-					const char* pBegin = strstr( str, "/DSHADERCOMBO=" );
-					const char* pEnd   = strstr( str, "/Dmain" );
-					if ( pBegin )
-					{
-						pBegin += STATIC_STRLEN( "/DSHADERCOMBO=" );
-						const char* pSpace = strchr( pBegin, ' ' );
-						if ( pSpace )
-							std::cout << "        Combo # : " << clr::green << PrettyPrint( strtoull( pBegin, nullptr, 16 ) ) << clr::reset << std::endl;
-					}
-
-					if ( !pEnd )
-						pEnd = str + strlen( str );
-					while ( pBegin && *pBegin && !isspace( *pBegin ) )
-						++pBegin;
-					while ( pBegin && *pBegin && isspace( *pBegin ) )
-						++pBegin;
+					const char* iter = str;
+					iter += strlen( iter ) + 1; // "combo"
+					iter += strlen( iter ) + 1; // file name
+					iter += strlen( iter ) + 1; // shader version
 
 					// Now parse all combo defines in [pBegin, pEnd]
-					while ( pBegin && *pBegin && pBegin < pEnd )
+					while ( *iter )
 					{
-						const char* pDefine = strstr( pBegin, "/D" );
-						if ( !pDefine || pDefine >= pEnd )
-							break;
+						const char* pDefine = iter;
+						iter += strlen( iter ) + 1;
+						const char* pValue = iter;
+						iter += strlen( iter ) + 1;
 
-						const char* pEqSign = strchr( pDefine, '=' );
-						if ( !pEqSign || pEqSign >= pEnd )
-							break;
-
-						const char* pSpace = strchr( pEqSign, ' ' );
-						if ( !pSpace || pSpace >= pEnd )
-							pSpace = pEnd;
-
-						pBegin = pSpace;
-
-						std::cout << "                  " << clr::pinkish << std::string( pEqSign + 1, pSpace - pEqSign - 1 ) << " " << clr::red << std::string( pDefine + 2, pEqSign - pDefine - 2 ) << std::endl;
+						std::cout << "                  " << clr::pinkish << pDefine << " " << clr::red << pValue << std::endl;
 					}
 					std::cout << clr::reset;
 				}
 
-				std::cout << "    " << clr::green << std::regex_replace( str, cmdReplaceReg, "" ) << clr::reset << std::endl;
+				memset( str, 0, sizeof( str ) );
+				Combo_FormatCommandHumanReadable( hCombo, str );
+				std::cout << "    " << clr::green << str << clr::reset << std::endl;
 			}
 		}
 	}
@@ -2081,6 +1965,7 @@ int main( int argc, const char* argv[] )
 	cmdLine.add( "", false, 0, 0, "Enables extended compile error messages", "-verbose_errors" );
 	cmdLine.add( "0", false, 1, 0, "Number of threads used, defaults to core count", "-threads", "/threads" );
 	cmdLine.add( "", true, 1, 0, "Base path for shaders", "-shaderpath" );
+	cmdLine.add( "", true, 1, 0, "Config file used for compilation", "-config" );
 	cmdLine.add( "", false, 1, 0, " ", "-subprocess" );
 	cmdLine.add( "", false, 0, 0, "Do not spawn any child subprocess", "-local" );
 
@@ -2157,14 +2042,13 @@ int main( int argc, const char* argv[] )
 	V_FixSlashes( g_ExeDir );
 
 	cmdLine.get( "-shaderpath" )->getString( g_pShaderPath );
+	cmdLine.get( "-config" )->getString( g_pShaderConfigFile );
 	g_bVerbose = cmdLine.isSet( "-verbose" );
 	g_bVerbose2 = cmdLine.isSet( "-verbose2" );
 
 	// Setting up the minidump handlers
 	SetUnhandledExceptionFilter( ToolsExceptionFilter );
 	Shared_ParseListOfCompileCommands();
-
-	Worker_GetLocalCopyOfShaders();
 
 	std::cout << "\rCompiling " << clr::green << PrettyPrint( g_numCompileCommands ) << clr::reset << " commands in " << clr::green << PrettyPrint( g_numStaticCombos ) << clr::reset << " static combos.                      \r";
 	CompileShaders();

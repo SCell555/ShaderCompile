@@ -1,6 +1,7 @@
 ﻿#ifndef STRMANIP_HPP
 #define STRMANIP_HPP
 
+#include <iomanip>
 
 static std::string PrettyPrintNumber( uint64 k )
 {
@@ -71,7 +72,7 @@ static std::_Smanip<int64> FormatTimeShort( int64 i )
 	return { __FormatTime2, i };
 }
 
-static FORCEINLINE bool PATHSEPARATOR( char c )
+static __forceinline bool PATHSEPARATOR( char c )
 {
 	return c == '\\' || c == '/';
 }
@@ -89,7 +90,7 @@ static const char* V_GetFileExtension( const char* path )
 	return src;
 }
 
-static FORCEINLINE bool V_IsAbsolutePath( const char* pStr )
+static __forceinline bool V_IsAbsolutePath( const char* pStr )
 {
 	return pStr[0] && pStr[1] == ':' || pStr[0] == '/' || pStr[0] == '\\';
 }
