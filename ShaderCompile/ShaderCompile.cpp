@@ -17,29 +17,30 @@
 #undef PostMessage
 
 #include "DbgHelp.h"
-#include "basetypes.h"
-#include "cfgprocessor.h"
-#include "cmdsink.h"
 #include "conio.h"
 #include "d3dcompiler.h"
-#include "d3dxfxc.h"
 #include "direct.h"
-#include "ezOptionParser.hpp"
-#include "gsl/string_span"
 #include "io.h"
-#include "process.h"
-#include "shader_vcs_version.h"
-#include "subprocess.h"
 #include "sys/stat.h"
-#include "termcolor/style.hpp"
-#include "utlbuffer.h"
-#include "utlnodehash.h"
-#include "utlstringmap.h"
 #include <chrono>
 #include <future>
 #include <iomanip>
 #include <regex>
 #include <thread>
+
+#include "basetypes.h"
+#include "cfgprocessor.h"
+#include "cmdsink.h"
+#include "d3dxfxc.h"
+#include "shader_vcs_version.h"
+#include "subprocess.h"
+#include "utlbuffer.h"
+#include "utlnodehash.h"
+#include "utlstringmap.h"
+
+#include "ezOptionParser.hpp"
+#include "termcolor/style.hpp"
+#include "gsl/string_span"
 
 #include "CRC32.hpp"
 #include "movingaverage.hpp"
@@ -153,7 +154,7 @@ struct CStaticCombo // all the data for one static combo
 
 		using std::unique_ptr<byte[]>::operator bool;
 	};
-	CStaticCombo* m_pNext, * m_pPrev;
+	CStaticCombo *m_pNext, *m_pPrev;
 private:
 	uint64 m_nStaticComboID;
 
@@ -226,7 +227,7 @@ static CShaderMap g_ShaderByteCode;
 
 static CStaticCombo* StaticComboFromDictAdd( const char* pszShaderName, uint64 nStaticComboId )
 {
-	StaticComboNodeHash_t*& rpNodeHash = g_ShaderByteCode[pszShaderName];
+	StaticComboNodeHash_t* &rpNodeHash = g_ShaderByteCode[pszShaderName];
 	if ( !rpNodeHash )
 		rpNodeHash = new StaticComboNodeHash_t;
 
@@ -245,8 +246,7 @@ static CStaticCombo* StaticComboFromDict( const char* pszShaderName, uint64 nSta
 {
 	if ( StaticComboNodeHash_t* pNodeHash = g_ShaderByteCode[pszShaderName] )
 		return pNodeHash->FindByKey( nStaticComboId );
-	else
-		return nullptr;
+	return nullptr;
 }
 
 static CUtlStringMap<ShaderInfo_t> g_ShaderToShaderInfo;
@@ -575,9 +575,9 @@ static char* stb_include_append( char* str, size_t* curlen, gsl::span<char> adds
 	return str;
 }
 
-static char* stb_include_file( const char* filename, size_t& total, gsl::span<char> error );
+static char* stb_include_file( const char* filename, size_t& total );
 
-static char* stb_include_string( gsl::span<char> str, size_t& total, gsl::span<char> error )
+static char* stb_include_string( gsl::span<char> str, size_t& total )
 {
 	include_info* inc_list;
 	const int num  = stb_include_find_includes( str, &inc_list );
@@ -589,7 +589,7 @@ static char* stb_include_string( gsl::span<char> str, size_t& total, gsl::span<c
 		text                     = stb_include_append( text, &textlen, str.subspan( last, info.offset - last ) );
 		{
 			size_t len = 0;
-			char* inc  = stb_include_file( info.filename, len, error );
+			char* inc  = stb_include_file( info.filename, len );
 			total += len;
 			if ( inc == nullptr )
 			{
@@ -607,19 +607,14 @@ static char* stb_include_string( gsl::span<char> str, size_t& total, gsl::span<c
 	return text;
 }
 
-static char* stb_include_file( const char* filename, size_t& total, gsl::span<char> error )
+static char* stb_include_file( const char* filename, size_t& total )
 {
 	size_t len;
 	char* text = stb_include_load_file( filename, len );
 	if ( text == nullptr )
-	{
-		strcpy_s( error.data(), error.size(), "Error: couldn't load '" );
-		strcat_s( error.data(), error.size(), filename );
-		strcat_s( error.data(), error.size(), "'" );
 		return nullptr;
-	}
 	total += len;
-	char* result = stb_include_string( gsl::make_span( text, len ), total, error );
+	char* result = stb_include_string( gsl::make_span( text, len ), total );
 	free( text );
 	return result;
 }
@@ -627,8 +622,7 @@ static char* stb_include_file( const char* filename, size_t& total, gsl::span<ch
 static CRC32::CRC32_t CalculateCRC( const char* fileName )
 {
 	size_t length   = 0;
-	char error[512] = { 0 };
-	char* src       = stb_include_file( fileName, length, error );
+	char* src       = stb_include_file( fileName, length );
 
 	const auto& find = []( const char& a, const char& b ) {
 		return a == '\r' && b == '\n';
@@ -636,8 +630,8 @@ static CRC32::CRC32_t CalculateCRC( const char* fileName )
 	std::vector<char> data( src, src + length );
 	free( src );
 
-	std::vector<char>::iterator i;
-	while ( ( i = std::adjacent_find( data.begin(), data.end(), find ) ) != data.end() )
+	std::vector<char>::const_iterator i;
+	while ( ( i = std::adjacent_find( data.cbegin(), data.cend(), find ) ) != data.cend() )
 		data.erase( i );
 
 	return CRC32::ProcessSingleBuffer( data.data(), data.size() );
@@ -1043,7 +1037,7 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 	GLOBAL_DATA_MTX_LOCK();
 	if ( pStComboRec )
 		pByteCodeArray->DeleteByKey( nComboOfEntry );
-	if ( std::chrono::duration_cast<std::chrono::seconds>(fCurTime - s_fLastInfoTime ).count() != 0 )
+	if ( std::chrono::duration_cast<std::chrono::seconds>( fCurTime - s_fLastInfoTime ).count() != 0 )
 	{
 		if ( s_lastShader != pEntry->m_szName )
 		{
