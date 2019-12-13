@@ -163,12 +163,12 @@ def write_include(file_name, base_name, ver):
                 include.write('0;\n')
             include.write('\t}\n')
             include.write('};\n\n')
-            
-            pref = 'forgot_to_set_static_'
+
             if ps:
-                pref += 'psh_'
+                pref = 'psh_'
             else:
-                pref += 'vsh_'
+                pref = 'vsh_'
+            pref += 'forgot_to_set_%s_' % suffix.lower()
             include.write('#define shader%sTest_%s '%(suffix, base_name))
             if write_ifdef:
                 include.write(' + '.join([pref + c.name for c in vars if not hasattr(c, 'init')]))
@@ -183,7 +183,7 @@ def write_include(file_name, base_name, ver):
                 include.write('// %s\n' % s)
             include.write('\n')
 
-        include.writelines(['#ifndef %s_h\n' % base_name, '#define %s_h\n\n' % base_name])
+        include.writelines(['#ifndef %s_H\n' % base_name.upper(), '#define %s_H\n\n' % base_name.upper()])
         include.writelines(['#include "shaderapi/ishaderapi.h"\n', '#include "shaderapi/ishadershadow.h"\n',
                             '#include "materialsystem/imaterialvar.h"\n\n'])  # includes
 
@@ -194,7 +194,7 @@ def write_include(file_name, base_name, ver):
         include.write('\n')
         # dynamic combos
         write_vars('Dynamic', dynamic, 'IShaderDynamicAPI* pShaderAPI', 1)
-        include.write('\n#endif')
+        include.write('\n#endif\t// %s_H' % base_name.upper())
     return static, dynamic, skip, mask, files, ps
 
 

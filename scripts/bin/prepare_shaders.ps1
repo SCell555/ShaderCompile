@@ -231,7 +231,8 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
         if ($isPs -eq $false) {
             $pref = "vsh_"
         }
-        $p = [System.Linq.Enumerable]::Select($p, [Func[object, string]]{ param($c) "forgot_to_set_static_$pref$($c.name)" })
+        $pref += "$($pref)forgot_to_set_$($suffix.ToLower())_"
+        $p = [System.Linq.Enumerable]::Select($p, [Func[object, string]]{ param($c) $pref + $c.name })
         $p = [System.Linq.Enumerable]::ToList($p)
         if ($p.Count -ne 0) {
             $fWriter.Write([System.String]::Join(" + ", $p))
@@ -249,14 +250,14 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
         $fWriter.Write("$($n)")
     }
 
-    $fWriter.Write("#ifndef $($baseName)_h$($n)#define $($baseName)_h$($n)$($n)")
+    $fWriter.Write("#ifndef $($baseName.ToUpperInvariant())_H$($n)#define $($baseName.ToUpperInvariant())_H$($n)$($n)")
     $fWriter.Write("#include ""shaderapi/ishaderapi.h""$($n)#include ""shaderapi/ishadershadow.h""$($n)#include ""materialsystem/imaterialvar.h""$($n)$($n)")
 
     WriteVars "Static" $static "IShaderShadow* pShaderShadow, IMaterialVar** params" ([System.Linq.Enumerable]::Aggregate($dynamic, [System.UInt32]1, [Func[System.UInt32,object,System.UInt32]]{ param($r, $c) $r * ($c.maxVal - $c.minVal + 1) }))
     $fWriter.Write("$n")
     WriteVars "Dynamic" $dynamic "IShaderDynamicAPI* pShaderAPI" 1
 
-    $fWriter.Write("$($n)#endif")
+    $fWriter.Write("$($n)#endif$($t)// $($baseName.ToUpperInvariant())_H")
 
     $fWriter.Close()
 
