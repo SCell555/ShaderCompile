@@ -115,13 +115,16 @@ def write_include(file_name, base_name, ver):
     with open(Path(file_name).parent / 'include' / (base_name + '.inc'), 'w') as include:
         def write_vars(suffix: str, vars, ctor: str, scale: int):
             include.write('class %s_%s_Index\n{\n' % (base_name, suffix))
+            write_ifdef = len([c for c in vars if not hasattr(c, 'init')]) > 0
             for v in vars:
                 include.write('\tint m_n%s : %d;\n' % (v.name, (v.maxVal - v.minVal + 1).bit_length()))
-            include.write('#ifdef DEBUG\n')
+            if write_ifdef:
+                include.write('#ifdef DEBUG\n')
             for v in vars:
                 if not hasattr(v, 'init'):
                     include.write('\tbool m_b%s : 1;\n' % v.name)
-            include.write('#endif\npublic:\n')
+            if write_ifdef:
+                include.write('#endif\npublic:\n')
             # setters
             for v in vars:
                 include.write('\tvoid Set%s( int i )\n\t{\n' % v.name)
@@ -137,16 +140,19 @@ def write_include(file_name, base_name, ver):
             include.write('\t%s_%s_Index( %s )\n\t{\n' % (base_name, suffix, ctor))
             for v in vars:
                 include.write('\t\tm_n%s = %s;\n' % (v.name, getattr(v, 'init', '0')))
-            include.write('#ifdef DEBUG\n')
+            if write_ifdef:
+                include.write('#ifdef DEBUG\n')
             for v in vars:
                 if not hasattr(v, 'init'):
                     include.write('\t\tm_b%s = false;\n' % v.name)
-            include.write('#endif\n\t}\n\n')
+            if write_ifdef:
+                include.write('#endif\n')
+            include.write('\t}\n\n')
 
             # index
             include.write('\tint GetIndex()\n\t{\n')
             if len(vars) == 0:
-                include.write('return 0;\n')
+                include.write('\t\treturn 0;\n')
             else:
                 include.write(
                     '\t\tAssert( %s );\n' % ' && '.join(['m_b' + v.name for v in vars if not hasattr(v, 'init')]))
@@ -156,7 +162,19 @@ def write_include(file_name, base_name, ver):
                     scale *= v.maxVal - v.minVal + 1
                 include.write('0;\n')
             include.write('\t}\n')
-            include.write('};\n')
+            include.write('};\n\n')
+            
+            pref = 'forgot_to_set_static_'
+            if ps:
+                pref += 'psh_'
+            else:
+                pref += 'vsh_'
+            include.write('#define shader%sTest_%s '%(suffix, base_name))
+            if write_ifdef:
+                include.write(' + '.join([pref + c.name for c in vars if not hasattr(c, 'init')]))
+                include.write('\n\n')
+            else:
+                include.write('1\n\n')
 
         # skips
         if len(skip) > 0:
@@ -176,7 +194,7 @@ def write_include(file_name, base_name, ver):
         include.write('\n')
         # dynamic combos
         write_vars('Dynamic', dynamic, 'IShaderDynamicAPI* pShaderAPI', 1)
-        include.write('\n\n#endif')
+        include.write('\n#endif')
     return static, dynamic, skip, mask, files, ps
 
 
