@@ -116,7 +116,27 @@ echo Building inc files and worklist for %inputbase%...
 set DYNAMIC=
 if "%dynamic_shaders%" == "1" set DYNAMIC=-d
 
-py "%SrcDirBase%\devtools\bin\prepare_shaders.py" %DYNAMIC% -v %SHVER% "%inputbase%.txt"
+where py > nul
+if ERRORLEVEL 0 (
+	set PY=py
+	goto HavePy
+)
+where python > nul
+if ERRORLEVEL 0 (
+	set PY=python
+	goto HavePy
+)
+
+if "%dynamic_shaders%" == "1" set DYNAMIC=-Dynamic
+echo Python not found, building with powershell
+powershell -NoLogo -ExecutionPolicy Bypass -Command "%SrcDirBase%\devtools\bin\prepare_shaders.ps1 %DYNAMIC% -Version %SHVER% '%inputbase%.txt'"
+goto Prepared
+
+:HavePy
+
+%PY% "%SrcDirBase%\devtools\bin\prepare_shaders.py" %DYNAMIC% -v %SHVER% "%inputbase%.txt"
+
+:Prepared
 
 REM ****************
 REM Execute distributed process on work/build list

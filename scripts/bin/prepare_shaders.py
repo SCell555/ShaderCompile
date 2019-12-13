@@ -153,7 +153,7 @@ def write_include(file_name, base_name, ver):
                 include.write('\t\treturn ')
                 for v in vars:
                     include.write('( %d * m_n%s ) + ' % (scale, v.name))
-                    scale *= int(v.maxVal) - int(v.minVal) + 1
+                    scale *= v.maxVal - v.minVal + 1
                 include.write('0;\n')
             include.write('\t}\n')
             include.write('};\n')
