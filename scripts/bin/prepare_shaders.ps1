@@ -37,7 +37,7 @@ function ParseFile([System.IO.FileInfo]$ffile, [string]$ver) {
         $is_ps = $false
     }
 
-    function ProcessCombo([string]$regex, [string]$line, [AllowNull][string]$init, [System.Collections.Generic.List[object]]$out) {
+    function ProcessCombo([string]$regex, [string]$line, $init, [System.Collections.Generic.List[object]]$out) {
         if ($line -match $regex) {
             if ($null -ne $init) {
                 $out.Add(@{"name" = $Matches[1]; "minVal" = [int]$Matches[2]; "maxVal" = [int]$Matches[3]; "init" = $init})
@@ -157,17 +157,28 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
 
     function WriteVars([string]$suffix, [System.Collections.Generic.List[object]]$vars, [string]$ctor, [System.UInt32]$scale) {
         $fWriter.Write("class $($baseName)_$($suffix)_Index$($n){$($n)")
+        $writeIfdef = $false
         foreach ($v in $vars) {
             $bits = BitCount($v.maxVal - $v.minVal + 1)
             $fWriter.Write("$($t)int m_n$($v.name) : $bits;$($n)")
+            if ($null -eq $v.init) {
+                $writeIfdef = $true
+            }
         }
-        $fWriter.Write("#ifdef DEBUG$($n)")
+        if ($writeIfdef) {
+            $fWriter.Write("#ifdef DEBUG$($n)")
+        }
+
         foreach ($v in $vars) {
             if ($null -eq $v.init) {
                 $fWriter.Write("$($t)bool m_b$($v.name) : 1;$($n)")
             }
         }
-        $fWriter.Write("#endif$($n)public:$($n)")
+
+        if ($writeIfdef) {
+            $fWriter.Write("#endif$($n)public:$($n)")
+        }
+
         foreach ($v in $vars) {
             $fWriter.Write("$($t)void Set$($v.name)( int i )$($n)$($t){$($n)")
             $fWriter.Write("$($t)$($t)Assert( i >= $($v.minVal) && i <= $($v.maxVal) );$($n)")
@@ -184,17 +195,22 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
         foreach ($v in $vars) {
             $fWriter.Write("$($t)$($t)m_n$($v.name) = $(('0', $v.init)[$null -ne $v.init]);$($n)")
         }
-        $fWriter.Write("#ifdef DEBUG$($n)")
+        if ($writeIfdef) {
+            $fWriter.Write("#ifdef DEBUG$($n)")
+        }
         foreach ($v in $vars) {
             if ($null -eq $v.init) {
                 $fWriter.Write("$($t)$($t)m_b$($v.name) = false;$($n)")
             }
         }
-        $fWriter.Write("#endif$($n)$($t)}$($n)$($n)")
+        if ($writeIfdef) {
+            $fWriter.Write("#endif$($n)")
+        }
+        $fWriter.Write("$($t)}$($n)$($n)")
 
         $fWriter.Write("$($t)int GetIndex()$($n)$($t){$($n)")
         if ($vars.Count -eq 0) {
-            $fWriter.Write("return 0;$($n)")
+            $fWriter.Write("$($t)$($t)return 0;$($n)")
         } else {
             $p = [System.Linq.Enumerable]::Where($vars, [Func[object,bool]]{ param($v) $null -eq $v.init })
             $p = [System.Linq.Enumerable]::Select($p, [Func[object, string]]{ param($c) "m_b" + $c.name })
