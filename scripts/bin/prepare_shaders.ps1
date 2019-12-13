@@ -131,9 +131,14 @@ function CheckCrc([System.IO.FileInfo]$srcFile, [string]$name) {
 function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$ver) {
     ($static, $dynamic, $skip, $mask, $files, $isPs) = (ParseFile $srcFile $ver)
 
-    $fStream = [System.IO.File]::Open([System.IO.Path]::Combine($srcFile.DirectoryName, "include", $baseName + ".inc"),
-     [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
-    
+    $fileName = [System.IO.Path]::Combine($srcFile.DirectoryName, "include", $baseName + ".inc")
+
+    if ([System.IO.File]::Exists($fileName)) {
+        Set-ItemProperty $fileName -Name IsReadOnly -Value $false
+    }
+
+    $fStream = [System.IO.File]::Open($fileName, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+
     $n = [System.Char]10
     $t = [System.Char]9
 
@@ -260,6 +265,8 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
     $fWriter.Write("$($n)#endif$($t)// $($baseName.ToUpperInvariant())_H")
 
     $fWriter.Close()
+
+    Set-ItemProperty $fileName -Name IsReadOnly -Value $true
 
     return ($static, $dynamic, $skip, $mask, $files, $isPs)
 }

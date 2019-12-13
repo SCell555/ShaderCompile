@@ -2,10 +2,12 @@ from functools import reduce
 import getopt
 import io
 import json
-import re
+from os import chmod
 from pathlib import Path
+from stat import S_IREAD, S_IRGRP, S_IROTH, S_IWUSR
 from subprocess import Popen, PIPE
 import sys
+import re
 
 inc_r = re.compile(r'#include\s+"(.*)"')
 xbox_reg_r = re.compile(r'\[XBOX\]')
@@ -112,7 +114,10 @@ def check_crc(src_file, name):
 
 def write_include(file_name, base_name, ver):
     (static, dynamic, skip, mask, files, ps) = parse_file(file_name, ver)
-    with open(Path(file_name).parent / 'include' / (base_name + '.inc'), 'w') as include:
+    name = Path(file_name).parent / 'include' / (base_name + '.inc')
+    if name.exists():
+        chmod(name, S_IWUSR | S_IREAD)
+    with open(name, 'w') as include:
         def write_vars(suffix: str, vars, ctor: str, scale: int):
             include.write('class %s_%s_Index\n{\n' % (base_name, suffix))
             write_ifdef = len([c for c in vars if not hasattr(c, 'init')]) > 0
@@ -195,6 +200,7 @@ def write_include(file_name, base_name, ver):
         # dynamic combos
         write_vars('Dynamic', dynamic, 'IShaderDynamicAPI* pShaderAPI', 1)
         include.write('\n#endif\t// %s_H' % base_name.upper())
+    chmod(name, S_IREAD | S_IRGRP | S_IROTH)
     return static, dynamic, skip, mask, files, ps
 
 
