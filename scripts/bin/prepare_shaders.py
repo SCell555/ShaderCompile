@@ -57,8 +57,6 @@ def parse_file(file_name, ver):
         assert vs
         not_match = re.compile(r'\[ps\d+\w?\]')
         sh_match = re.compile(r'\[vs(\d+\w?)\]')
-        if ver == '20b':
-            ver = '20'
 
     def process_combo(regex, l, _init, out):
         c = regex.match(l)
@@ -98,7 +96,7 @@ def parse_file(file_name, ver):
     mask = 0
     for c in centroids:
         mask += 1 << c
-    return static, dynamic, skip, mask, files, ps is not None
+    return static, dynamic, skip, mask, files
 
 
 def check_crc(src_file, name):
@@ -112,12 +110,12 @@ def check_crc(src_file, name):
         return False
 
 
-def write_include(file_name, base_name, ver):
-    (static, dynamic, skip, mask, files, ps) = parse_file(file_name, ver)
+def write_include(file_name, base_name, ver, is_vs):
+    (static, dynamic, skip, mask, files) = parse_file(file_name, ver)
     name = Path(file_name).parent / 'include' / (base_name + '.inc')
     if name.exists():
         chmod(name, S_IWUSR | S_IREAD)
-    with open(name, 'w') as include:
+    with open(name, 'w', newline='\n') as include:
         def write_vars(suffix: str, vars, ctor: str, scale: int):
             include.write('class %s_%s_Index\n{\n' % (base_name, suffix))
             write_ifdef = len([c for c in vars if not hasattr(c, 'init')]) > 0
@@ -170,10 +168,10 @@ def write_include(file_name, base_name, ver):
             include.write('\t}\n')
             include.write('};\n\n')
 
-            if ps:
-                pref = 'psh_'
-            else:
+            if is_vs:
                 pref = 'vsh_'
+            else:
+                pref = 'psh_'
             pref += 'forgot_to_set_%s_' % suffix.lower()
             include.write('#define shader%sTest_%s '%(suffix, base_name))
             if write_ifdef:
@@ -202,7 +200,7 @@ def write_include(file_name, base_name, ver):
         write_vars('Dynamic', dynamic, 'IShaderDynamicAPI* pShaderAPI', 1)
         include.write('\n#endif\t// %s_H' % base_name.upper())
     chmod(name, S_IREAD | S_IRGRP | S_IROTH)
-    return static, dynamic, skip, mask, files, ps
+    return static, dynamic, skip, mask, files
 
 
 def main(argv):
@@ -232,19 +230,23 @@ def main(argv):
                 continue
 
             full = dir_name / li.strip(' \n\t')
-            name = re.sub(r'_[vp]s(\d+\w?)$', lambda m: '%s%s' % (m.group(0)[:3], ver), full.stem.lower())
+            is_vs = re.search(r'_vs\d+\w?$', full.stem) != None
+            loc_ver = ver
+            if is_vs and ver == "20b":
+                loc_ver = "20"
+            name = re.sub(r'_[vp]s(\d+\w?)$', lambda m: '%s%s' % (m.group(0)[:3], loc_ver), full.stem.lower())
 
             if check_crc(full, name):
                 continue
 
-            (static, dynamic, skip, mask, files, ps) = write_include(full, name, ver)
+            (static, dynamic, skip, mask, files) = write_include(full, name, loc_ver, is_vs)
             if do_dynamic:
                 continue
 
             # ShaderCompile does not need initial values
             [delattr(c, 'init') for c in static + dynamic if hasattr(c, 'init')]
             to_process[name] = {"static": static, "dynamic": dynamic, "files": files, "centroid": mask,
-                                "version": out_versions[is_v3 + ps * 2], "skip": '(' + ')||('.join(skip) + ')'}
+                                "version": out_versions[is_v3 + (not is_vs) * 2], "skip": '(' + ')||('.join(skip) + ')'}
 
     if len(to_process) > 0:
         with open(dir_name / (file.stem + '_work.json'), "w") as work_list:

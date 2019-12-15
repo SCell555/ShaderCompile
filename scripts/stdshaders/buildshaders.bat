@@ -31,6 +31,7 @@ if "%1" == "" goto usage
 set inputbase=%1
 
 if /i "%6" == "-force30" goto set_force30_arg
+goto set_force_end
 :set_force30_arg
 			set IS30=1
 			goto set_force_end

@@ -27,14 +27,9 @@ function ParseFile([System.IO.FileInfo]$ffile, [string]$ver) {
     if ([System.IO.Path]::GetFileNameWithoutExtension($ffile.Name) -match '_ps(\d+\w?)$') {
         $not_match = '\[vs\d+\w?\]'
         $sh_match = '\[ps(\d+\w?)\]'
-        $is_ps = $true
     } else {
         $not_match = '\[ps\d+\w?\]'
         $sh_match = '\[vs(\d+\w?)\]'
-        if ($ver -eq "20b") {
-            $ver = "20"
-        }
-        $is_ps = $false
     }
 
     function ProcessCombo([string]$regex, [string]$line, $init, [System.Collections.Generic.List[object]]$out) {
@@ -112,7 +107,7 @@ function ParseFile([System.IO.FileInfo]$ffile, [string]$ver) {
         $mask += 1 -shl $c
     }
 
-    return ($static, $dynamic, $skip, $mask, $files, $is_ps)
+    return ($static, $dynamic, $skip, $mask, $files)
 }
 
 function CheckCrc([System.IO.FileInfo]$srcFile, [string]$name) {
@@ -125,11 +120,11 @@ function CheckCrc([System.IO.FileInfo]$srcFile, [string]$name) {
     $b = [System.Byte[]]::new(4)
     [void]$f.Read($b, 0, 4)
     $f.Close()
-    return [System.BitConverter]::ToUInt32($b, 0) -eq [System.UInt32](& .\ShaderCrc $srcFile)
+    return [System.BitConverter]::ToUInt32($b, 0) -eq [System.UInt32](& "$PSScriptRoot\ShaderCrc" $srcFile)
 }
 
-function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$ver) {
-    ($static, $dynamic, $skip, $mask, $files, $isPs) = (ParseFile $srcFile $ver)
+function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$ver, [boolean]$isVs) {
+    ($static, $dynamic, $skip, $mask, $files) = (ParseFile $srcFile $ver)
 
     $fileName = [System.IO.Path]::Combine($srcFile.DirectoryName, "include", $baseName + ".inc")
 
@@ -234,10 +229,10 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
         
         $p = [System.Linq.Enumerable]::Where($vars, [Func[object,bool]]{ param($v) $null -eq $v.init })
         $pref = "psh_"
-        if ($isPs -eq $false) {
+        if ($isVs) {
             $pref = "vsh_"
         }
-        $pref += "$($pref)forgot_to_set_$($suffix.ToLower())_"
+        $pref += "forgot_to_set_$($suffix.ToLower())_"
         $p = [System.Linq.Enumerable]::Select($p, [Func[object, string]]{ param($c) $pref + $c.name })
         $p = [System.Linq.Enumerable]::ToList($p)
         if ($p.Count -ne 0) {
@@ -269,7 +264,7 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
 
     Set-ItemProperty $fileName -Name IsReadOnly -Value $true
 
-    return ($static, $dynamic, $skip, $mask, $files, $isPs)
+    return ($static, $dynamic, $skip, $mask, $files)
 }
 
 function main() {
@@ -288,13 +283,18 @@ function main() {
         }
 
         $full = [System.IO.Path]::Combine($File.DirectoryName, $line)
-        $name = [System.IO.Path]::GetFileNameWithoutExtension($line) -replace '(_[vp]s)\d+\w?$',('${1}' + $Version)
+		$isVs = [System.IO.Path]::GetFileNameWithoutExtension($full) -match '_vs\d+\w?$'
+		$locVer = $Version
+        if ($isVs -and $Version -eq "20b") {
+            $locVer = "20"
+        }
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($line) -replace '(_[vp]s)\d+\w?$',('${1}' + $locVer)
 
         if (CheckCrc $full $name) {
-            continue
+            # continue
         }
 
-        ($st, $dyn, $skip, $mask, $files, $isPs) = WriteInclude $full $name $Version
+        ($st, $dyn, $skip, $mask, $files) = WriteInclude $full $name $locVer $isVs
 
         if ($Dynamic) {
             continue
@@ -308,7 +308,7 @@ function main() {
             $c.Remove("init")
         }
 
-        $to_process[$name] = @{"static" = $st; "dynamic" = $dyn; "files" = $files; "centroid" = $mask; "version" = $outVersion[[int]$isV3 + [int]$isPs * 2]; "skip" = "(" + [System.String]::Join(")||(", $skip) + ")" }
+        $to_process[$name] = @{"static" = $st; "dynamic" = $dyn; "files" = $files; "centroid" = $mask; "version" = $outVersion[[int]$isV3 + (1 - [int]$isVs) * 2]; "skip" = "(" + [System.String]::Join(")||(", $skip) + ")" }
     }
     $fileList.Close()
 
