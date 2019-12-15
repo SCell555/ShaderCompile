@@ -171,7 +171,7 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
             }
         }
         if ($writeIfdef) {
-            $fWriter.Write("#ifdef DEBUG$($n)")
+            $fWriter.Write("#ifdef _DEBUG$($n)")
         }
 
         foreach ($v in $vars) {
@@ -181,27 +181,28 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
         }
 
         if ($writeIfdef) {
-            $fWriter.Write("#endif$($n)public:$($n)")
+            $fWriter.Write("#endif$($t)// _DEBUG$($n)")
         }
+		$fWriter.Write("public:$($n)")
 
         foreach ($v in $vars) {
             $fWriter.Write("$($t)void Set$($v.name)( int i )$($n)$($t){$($n)")
             $fWriter.Write("$($t)$($t)Assert( i >= $($v.minVal) && i <= $($v.maxVal) );$($n)")
             $fWriter.Write("$($t)$($t)m_n$($v.name) = i;$($n)")
             if ($null -eq $v.init) {
-                $fWriter.Write("#ifdef DEBUG$($n)")
+                $fWriter.Write("#ifdef _DEBUG$($n)")
                 $fWriter.Write("$($t)$($t)m_b$($v.name) = true;$($n)")
-                $fWriter.Write("#endif$($n)")
+                $fWriter.Write("#endif$($t)// _DEBUG$($n)")
             }
             $fWriter.Write("$($t)}$($n)$($n)")
         }
-        
+
         $fWriter.Write("$($t)$($baseName)_$($suffix)_Index( $ctor )$($n)$($t){$($n)")
         foreach ($v in $vars) {
             $fWriter.Write("$($t)$($t)m_n$($v.name) = $(('0', $v.init)[$null -ne $v.init]);$($n)")
         }
         if ($writeIfdef) {
-            $fWriter.Write("#ifdef DEBUG$($n)")
+            $fWriter.Write("#ifdef _DEBUG$($n)")
         }
         foreach ($v in $vars) {
             if ($null -eq $v.init) {
@@ -209,7 +210,7 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
             }
         }
         if ($writeIfdef) {
-            $fWriter.Write("#endif$($n)")
+            $fWriter.Write("#endif$($t)// _DEBUG$($n)")
         }
         $fWriter.Write("$($t)}$($n)$($n)")
 

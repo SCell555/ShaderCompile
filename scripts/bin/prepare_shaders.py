@@ -4,10 +4,10 @@ import io
 import json
 from os import chmod
 from pathlib import Path
+import re
 from stat import S_IREAD, S_IRGRP, S_IROTH, S_IWUSR
 from subprocess import Popen, PIPE
 import sys
-import re
 
 inc_r = re.compile(r'#include\s+"(.*)"')
 xbox_reg_r = re.compile(r'\[XBOX\]')
@@ -124,21 +124,22 @@ def write_include(file_name, base_name, ver):
             for v in vars:
                 include.write('\tint m_n%s : %d;\n' % (v.name, (v.maxVal - v.minVal + 1).bit_length()))
             if write_ifdef:
-                include.write('#ifdef DEBUG\n')
+                include.write('#ifdef _DEBUG\n')
             for v in vars:
                 if not hasattr(v, 'init'):
                     include.write('\tbool m_b%s : 1;\n' % v.name)
             if write_ifdef:
-                include.write('#endif\npublic:\n')
+                include.write('#endif\t// _DEBUG\n')
+            include.write('public:\n')
             # setters
             for v in vars:
                 include.write('\tvoid Set%s( int i )\n\t{\n' % v.name)
                 include.write('\t\tAssert( i >= %d && i <= %d );\n' % (v.minVal, v.maxVal))
                 include.write('\t\tm_n%s = i;\n' % v.name)
                 if not hasattr(v, 'init'):
-                    include.write('#ifdef DEBUG\n')
+                    include.write('#ifdef _DEBUG\n')
                     include.write('\t\tm_b%s = true;\n' % v.name)
-                    include.write('#endif\n')
+                    include.write('#endif\t// _DEBUG\n')
                 include.write('\t}\n\n')
 
             # ctor
@@ -146,12 +147,12 @@ def write_include(file_name, base_name, ver):
             for v in vars:
                 include.write('\t\tm_n%s = %s;\n' % (v.name, getattr(v, 'init', '0')))
             if write_ifdef:
-                include.write('#ifdef DEBUG\n')
+                include.write('#ifdef _DEBUG\n')
             for v in vars:
                 if not hasattr(v, 'init'):
                     include.write('\t\tm_b%s = false;\n' % v.name)
             if write_ifdef:
-                include.write('#endif\n')
+                include.write('#endif\t// _DEBUG\n')
             include.write('\t}\n\n')
 
             # index
@@ -241,9 +242,7 @@ def main(argv):
                 continue
 
             # ShaderCompile does not need initial values
-            for c in [a for a in [static, dynamic]]:
-                if hasattr(c, 'init'):
-                    delattr(c, 'init')
+            [delattr(c, 'init') for c in static + dynamic if hasattr(c, 'init')]
             to_process[name] = {"static": static, "dynamic": dynamic, "files": files, "centroid": mask,
                                 "version": out_versions[is_v3 + ps * 2], "skip": '(' + ')||('.join(skip) + ')'}
 
