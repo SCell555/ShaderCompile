@@ -158,8 +158,9 @@ def write_include(file_name, base_name, ver, is_vs):
             if len(vars) == 0:
                 include.write('\t\treturn 0;\n')
             else:
-                include.write(
-                    '\t\tAssert( %s );\n' % ' && '.join(['m_b' + v.name for v in vars if not hasattr(v, 'init')]))
+                if write_ifdef:
+                    include.write(
+                        '\t\tAssert( %s );\n' % ' && '.join(['m_b' + v.name for v in vars if not hasattr(v, 'init')]))
                 include.write('\t\treturn ')
                 for v in vars:
                     include.write('( %d * m_n%s ) + ' % (scale, v.name))

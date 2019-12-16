@@ -213,9 +213,11 @@ function WriteInclude([System.IO.FileInfo]$srcFile, [string]$baseName, [string]$
         if ($vars.Count -eq 0) {
             $fWriter.Write("$($t)$($t)return 0;$($n)")
         } else {
-            $p = [System.Linq.Enumerable]::Where($vars, [Func[object,bool]]{ param($v) $null -eq $v.init })
-            $p = [System.Linq.Enumerable]::Select($p, [Func[object, string]]{ param($c) "m_b" + $c.name })
-            $fWriter.Write("$($t)$($t)Assert( $([System.String]::Join(' && ', $p )) );$($n)")
+			if ($writeIfdef) {
+				$p = [System.Linq.Enumerable]::Where($vars, [Func[object,bool]]{ param($v) $null -eq $v.init })
+				$p = [System.Linq.Enumerable]::Select($p, [Func[object, string]]{ param($c) "m_b" + $c.name })
+				$fWriter.Write("$($t)$($t)Assert( $([System.String]::Join(' && ', $p )) );$($n)")
+			}
             $fWriter.Write("$($t)$($t)return ")
             foreach ($v in $vars) {
                 $fWriter.Write("( $scale * m_n$($v.name) ) + ")
@@ -291,7 +293,7 @@ function main() {
         $name = [System.IO.Path]::GetFileNameWithoutExtension($line) -replace '(_[vp]s)\d+\w?$',('${1}' + $locVer)
 
         if (CheckCrc $full $name) {
-            # continue
+            continue
         }
 
         ($st, $dyn, $skip, $mask, $files) = WriteInclude $full $name $locVer $isVs
