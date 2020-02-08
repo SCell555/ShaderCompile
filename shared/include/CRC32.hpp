@@ -212,7 +212,7 @@ namespace SourceCodeHasher
 	{
 		int inc_count = 0;
 		char* s = text.data();
-		char* end = text._Unchecked_end();
+		char* end = text.data() + text.size();
 		include_info* list = nullptr;
 		while ( s < end )
 		{

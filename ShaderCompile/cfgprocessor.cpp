@@ -786,6 +786,7 @@ void ComboHandleImpl::FormatCommand( gsl::span<char> pchBuffer )
 
 	// Defines
 	Define const* const pDefVars = m_pEntry->m_pCg->GetDefinesBase();
+	Define const* const pDefVarsEnd = m_pEntry->m_pCg->GetDefinesEnd();
 	Define const* pSetDef;
 
 	{
@@ -803,7 +804,7 @@ void ComboHandleImpl::FormatCommand( gsl::span<char> pchBuffer )
 		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "SHADER_MODEL_%s", version ) + 1;
 		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "1" ) + 1;
 
-		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd; ++pSetValues, ++pSetDef )
+		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd && pDefVars < pDefVarsEnd; ++pSetValues, ++pSetDef )
 		{
 			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", pSetDef->Name() ) + 1;
 			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%d", *pSetValues ) + 1;
@@ -818,12 +819,13 @@ void ComboHandleImpl::FormatCommand( gsl::span<char> pchBuffer )
 void ComboHandleImpl::FormatCommandHumanReadable( gsl::span<char> pchBuffer )
 {
 	// Get the pointers
-	const int* const pnValues = m_arrVarSlots.data();
+	const int* const pnValues    = m_arrVarSlots.data();
 	const int* const pnValuesEnd = pnValues + m_arrVarSlots.size();
 	const int* pSetValues;
 
 	// Defines
-	Define const* const pDefVars = m_pEntry->m_pCg->GetDefinesBase();
+	Define const* const pDefVars    = m_pEntry->m_pCg->GetDefinesBase();
+	Define const* const pDefVarsEnd = m_pEntry->m_pCg->GetDefinesEnd();
 	Define const* pSetDef;
 
 	{
@@ -833,14 +835,16 @@ void ComboHandleImpl::FormatCommandHumanReadable( gsl::span<char> pchBuffer )
 		char version[20];
 		strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion );
 		_strupr_s( version );
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "/DSHADERCOMBO=%llx /DSHADER_MODEL_%s=1 /T%s /Emain",
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "/DSHADERCOMBO=%llx /DSHADER_MODEL_%s=1 /T%s /Emain ",
 			m_iComboNumber, version, m_pEntry->m_eiInfo.m_szShaderVersion );
 
-		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd; ++pSetValues, ++pSetDef )
+		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd && pDefVars < pDefVarsEnd; ++pSetValues, ++pSetDef )
 			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "/D%s=%d ", pSetDef->Name(), *pSetValues );
 
 		sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", m_pEntry->m_szShaderSrc );
 		// ------- end of OnCombo ---------------------
+
+		pchBuffer[o] = '\0';
 	}
 }
 

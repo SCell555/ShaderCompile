@@ -67,7 +67,7 @@ namespace SourceCodeHasher
 			file.clear();
 			file.seekg( 0, std::ios::beg );
 			file.read( data.data(), data.size() );
-			for ( std::vector<char>::iterator i; ( i = std::adjacent_find( data.begin(), data.end(), find ) ) != data.end(); )
+			for ( std::vector<char>::const_iterator i; ( i = std::adjacent_find( data.cbegin(), data.cend(), find ) ) != data.cend(); )
 				data.erase( i );
 
 			len = data.size();

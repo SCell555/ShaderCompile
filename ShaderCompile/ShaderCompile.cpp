@@ -263,7 +263,7 @@ public:
 		m_numTimesReported += numTimesReported;
 	}
 
-	[[nodiscard]] const char* GetFirstCommand() const { return m_sFirstCommand.c_str(); }
+	[[nodiscard]] const std::string& GetFirstCommand() const { return m_sFirstCommand; }
 	[[nodiscard]] int GetNumTimesReported() const { return m_numTimesReported; }
 
 protected:
@@ -900,7 +900,7 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 
 		s_averageProcess.PushValue( s_nLastEntry - nComboOfEntry );
 		s_nLastEntry = nComboOfEntry;
-		std::cout << "\rCompiling " << clr::green << pEntry->m_szName << clr::reset << " [ " << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining ("
+		std::cout << "\rCompiling " << ( g_Master_ShaderHadError.Defined( pEntry->m_szName ) ? clr::red : clr::green ) << pEntry->m_szName << clr::reset << " [ " << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining ("
 				  << clr::green2 << s_averageProcess.GetAverage() << clr::reset << " c/m) ] " << FormatTimeShort( std::chrono::duration_cast<std::chrono::seconds>( fCurTime - g_flStartTime ).count() ) << " elapsed         \r";
 		s_fLastInfoTime = fCurTime;
 	}
@@ -948,7 +948,13 @@ public:
 	void QuitSubs();
 	void OnProcessST();
 
+	void Stop()
+	{
+		m_bBreak = true;
+	}
+
 protected:
+	Threading::CInterlockedInt m_bBreak;
 	Threading::CInterlockedInt m_nActive;
 	TMutexType* m_pMutex;
 
@@ -1249,6 +1255,8 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::TryToPackageData( uint64 iCommandNumber )
 {
+	if ( m_bBreak )
+		return;
 	m_pMutex->Lock();
 
 	uint64 iFinishedByNow = iCommandNumber + 1;
@@ -1351,7 +1359,7 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 		}
 		m_pMutex->Unlock();
 
-		if ( hThreadCombo )
+		if ( hThreadCombo && !m_bBreak )
 			ExecuteCompileCommandThreaded( hThreadCombo );
 		else
 			break;
@@ -1364,7 +1372,7 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::OnProcessST()
 {
-	while ( m_hCombo )
+	while ( m_hCombo && !m_bBreak )
 	{
 		ExecuteCompileCommand( m_hCombo );
 
@@ -1373,31 +1381,25 @@ void CWorkerAccumState<TMutexType>::OnProcessST()
 }
 
 //
-// Worker_ProcessCommandRange_Singleton
+// ProcessCommandRange_Singleton
 //
-class Worker_ProcessCommandRange_Singleton
+class ProcessCommandRange_Singleton
 {
 public:
-	static Worker_ProcessCommandRange_Singleton*& Instance()
+	static ProcessCommandRange_Singleton*& Instance()
 	{
-		static Worker_ProcessCommandRange_Singleton* s_ptr = nullptr;
+		static ProcessCommandRange_Singleton* s_ptr = nullptr;
 		return s_ptr;
-	}
-	static Worker_ProcessCommandRange_Singleton* GetInstance()
-	{
-		Worker_ProcessCommandRange_Singleton* p = Instance();
-		Assert( p );
-		return p;
 	}
 
 public:
-	Worker_ProcessCommandRange_Singleton()
+	ProcessCommandRange_Singleton()
 	{
 		Assert( !Instance() );
 		Instance() = this;
 		Startup();
 	}
-	~Worker_ProcessCommandRange_Singleton()
+	~ProcessCommandRange_Singleton()
 	{
 		Assert( Instance() == this );
 		Instance() = nullptr;
@@ -1406,6 +1408,9 @@ public:
 
 public:
 	void ProcessCommandRange( uint64 shaderStart, uint64 shaderEnd );
+
+	void Stop();
+	bool Stoped() const { return m_bStopped; }
 
 protected:
 	void Startup();
@@ -1438,9 +1443,11 @@ protected:
 		using WorkerClass_t = CWorkerAccumState<SingleThreadMutex_t>;
 		WorkerClass_t* pWorkerObj;
 	} m_ST;
+
+	bool m_bStopped = false;
 };
 
-void Worker_ProcessCommandRange_Singleton::Startup()
+void ProcessCommandRange_Singleton::Startup()
 {
 	unsigned long threads;
 	cmdLine.get( "-threads" )->getULong( threads );
@@ -1456,7 +1463,7 @@ void Worker_ProcessCommandRange_Singleton::Startup()
 		m_ST.pWorkerObj = new ST::WorkerClass_t( &m_ST.mtx );
 }
 
-void Worker_ProcessCommandRange_Singleton::Shutdown()
+void ProcessCommandRange_Singleton::Shutdown()
 {
 	if ( m_MT.pWorkerObj )
 		delete m_MT.pWorkerObj;
@@ -1464,7 +1471,17 @@ void Worker_ProcessCommandRange_Singleton::Shutdown()
 		delete m_ST.pWorkerObj;
 }
 
-void Worker_ProcessCommandRange_Singleton::ProcessCommandRange( uint64 shaderStart, uint64 shaderEnd )
+void ProcessCommandRange_Singleton::Stop()
+{
+	m_bStopped = true;
+	if ( m_MT.pWorkerObj )
+		m_MT.pWorkerObj->Stop();
+	else
+		m_ST.pWorkerObj->Stop();
+}
+
+
+void ProcessCommandRange_Singleton::ProcessCommandRange( uint64 shaderStart, uint64 shaderEnd )
 {
 	if ( m_MT.pWorkerObj )
 	{
@@ -1485,12 +1502,6 @@ void Worker_ProcessCommandRange_Singleton::ProcessCommandRange( uint64 shaderSta
 		pWorkerObj->OnProcessST();
 		pWorkerObj->RangeFinished();
 	}
-}
-
-// You must process the work unit range.
-static void Worker_ProcessCommandRange( uint64 shaderStart, uint64 shaderEnd )
-{
-	Worker_ProcessCommandRange_Singleton::GetInstance()->ProcessCommandRange( shaderStart, shaderEnd );
 }
 
 static void Shader_ParseShaderInfoFromCompileCommands( const CfgProcessor::CfgEntryInfo* pEntry, ShaderInfo_t& shaderInfo )
@@ -1549,7 +1560,7 @@ static void Shared_ParseListOfCompileCommands()
 
 static void CompileShaders()
 {
-	Worker_ProcessCommandRange_Singleton pcr;
+	ProcessCommandRange_Singleton pcr;
 
 	//
 	// We will iterate on the cfg entries and process them
@@ -1569,7 +1580,10 @@ static void CompileShaders()
 		//
 		// Compile stuff
 		//
-		Worker_ProcessCommandRange( pEntry->m_iCommandStart, pEntry->m_iCommandEnd );
+		pcr.ProcessCommandRange( pEntry->m_iCommandStart, pEntry->m_iCommandEnd );
+
+		if ( pcr.Stoped() )
+			break;
 
 		//
 		// Now when the whole shader is finished we can write it
@@ -1645,21 +1659,14 @@ static bool WriteMiniDumpUsingExceptionInfo( _EXCEPTION_POINTERS* pExceptionInfo
 static LONG __stdcall ToolsExceptionFilter( struct _EXCEPTION_POINTERS* ExceptionInfo )
 {
 	// Non VMPI workers write a minidump and show a crash dialog like normal.
-	constexpr const int iType = MiniDumpNormal | MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory;
+	constexpr const int iType = MiniDumpNormal | MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory | MiniDumpWithThreadInfo;
 
 	WriteMiniDumpUsingExceptionInfo( ExceptionInfo, static_cast<MINIDUMP_TYPE>( iType ) );
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 
-static void WriteShaders()
+static void PrintCompileErrors()
 {
-	char str[4096];
-
-	// Write everything that succeeded
-	const int nStrings = g_ShaderByteCode.GetNumStrings();
-	for ( int i = 0; i < nStrings; i++ )
-		WriteShaderFiles( g_ShaderByteCode.String( i ), true );
-
 	// Write all the errors
 	//////////////////////////////////////////////////////////////////////////
 	//
@@ -1667,7 +1674,6 @@ static void WriteShaders()
 	//
 	//////////////////////////////////////////////////////////////////////////
 
-	const bool bValveVerboseComboErrors = cmdLine.isSet( "-verbose_errors" );
 	if ( const int numShaderMsgs = g_Master_CompilerMsg.GetNumStrings() )
 	{
 		int totalWarnings = 0, totalErrors = 0;
@@ -1714,52 +1720,14 @@ static void WriteShaders()
 			{
 				const char* const szMsg          = msg.error.String( k );
 				const CompilerMsgInfo& cmi       = msg.error[gsl::narrow<UtlSymId_t>( k )];
-				const char* const szFirstCmd     = cmi.GetFirstCommand();
+				const std::string& cmd           = cmi.GetFirstCommand();
 				const int numReported            = cmi.GetNumTimesReported();
-				uint64 iFirstCommand             = _strtoui64( szFirstCmd, nullptr, 10 );
-				CfgProcessor::ComboHandle hCombo = nullptr;
-
-				bool skip = false;
-				if ( CfgProcessor::Combo_GetNext( iFirstCommand, hCombo, g_numCompileCommands ) )
-				{
-					Combo_FormatCommand( hCombo, str );
-					Combo_Free( hCombo );
-				}
-				else
-				{
-					sprintf_s( str, "cmd # %s", szFirstCmd );
-					skip = true;
-				}
 
 				std::string m     = trim( szMsg );
 				const size_t find = m.find( cwd );
 				std::cout << std::quoted( find != std::string::npos ? m.replace( find, cwdLen, "" ) : m ) << "\nReported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
 
-				if ( bValveVerboseComboErrors && !skip )
-				{
-					std::cout << "    Verbose Description:\n";
-
-					const char* iter = str;
-					iter += strlen( iter ) + 1; // "combo"
-					iter += strlen( iter ) + 1; // file name
-					iter += strlen( iter ) + 1; // shader version
-
-					// Now parse all combo defines in [pBegin, pEnd]
-					while ( *iter )
-					{
-						const char* pDefine = iter;
-						iter += strlen( iter ) + 1;
-						const char* pValue = iter;
-						iter += strlen( iter ) + 1;
-
-						std::cout << "                  " << clr::pinkish << pDefine << " " << clr::red << pValue << std::endl;
-					}
-					std::cout << clr::reset;
-				}
-
-				memset( str, 0, sizeof( str ) );
-				Combo_FormatCommandHumanReadable( hCombo, str );
-				std::cout << "    " << clr::green << str << clr::reset << std::endl;
+				std::cout << "    " << clr::green << cmd << " " << shaderName << ".fxc" << clr::reset << std::endl;
 			}
 		}
 	}
@@ -1772,6 +1740,32 @@ static void WriteShaders()
 			continue;
 
 		std::cout << clr::pinkish << "FAILED: " << clr::red << szShaderName << clr::reset << std::endl;
+	}
+}
+
+static bool s_write = true;
+static BOOL WINAPI CtrlHandler( DWORD signal )
+{
+	if ( signal == CTRL_C_EVENT )
+	{
+		s_write = false;
+		if ( auto inst = ProcessCommandRange_Singleton::Instance() )
+			inst->Stop();
+		PrintCompileErrors();
+	}
+
+	return FALSE;
+}
+
+static void WriteShaders()
+{
+	// Write everything that succeeded
+	if ( s_write )
+	{
+		const int nStrings = g_ShaderByteCode.GetNumStrings();
+		for ( int i = 0; i < nStrings; i++ )
+			WriteShaderFiles( g_ShaderByteCode.String( i ), true );
+		PrintCompileErrors();
 	}
 
 	//
@@ -1794,6 +1788,7 @@ int main( int argc, const char* argv[] )
 		DWORD mode;
 		GetConsoleMode( console, &mode );
 		SetConsoleMode( console, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING );
+		SetConsoleCtrlHandler( CtrlHandler, true );
 	}
 
 	cmdLine.overview = "Source shader compiler.";
@@ -1808,7 +1803,6 @@ int main( int argc, const char* argv[] )
 	cmdLine.add( "", false, 0, 0, "Enables extended state printing", "-verbose" );
 	cmdLine.add( "", false, 0, 0, "Enables even more extended state printing", "-verbose2" );
 	cmdLine.add( "", false, 0, 0, "Enables preprocessor debug printing", "-verbose_preprocessor" );
-	cmdLine.add( "", false, 0, 0, "Enables extended compile error messages", "-verbose_errors" );
 	cmdLine.add( "0", false, 1, 0, "Number of threads used, defaults to core count", "-threads", "/threads" );
 	cmdLine.add( "", true, 1, 0, "Base path for shaders", "-shaderpath" );
 	cmdLine.add( "", true, 1, 0, "Config file used for compilation", "-config" );

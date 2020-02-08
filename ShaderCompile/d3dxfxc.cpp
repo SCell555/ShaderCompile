@@ -64,10 +64,10 @@ CSharedFile* CSharedFile::CreateSharedFile( const char* fileName )
 	}
 	void* vptr = file->m_pBaseAddr = MapViewOfFile( file->m_pFile, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
 	__assume( vptr );
-	uint8* ptr                     = static_cast<uint8*>( vptr );
-	file->m_nSize                  = *reinterpret_cast<size_t*>( ptr );
-	ptr += sizeof( size_t );
-	file->m_pData = ptr;
+	uint8* ptr		= static_cast<uint8*>( vptr );
+	file->m_nSize	= *reinterpret_cast<size_t*>( ptr );
+	ptr				+= sizeof( size_t );
+	file->m_pData	= ptr;
 	return file;
 }
 
@@ -223,8 +223,7 @@ namespace Private
 				pErrorMessages->Release();
 		}
 	}
-
-}; // namespace Private
+} // namespace Private
 
 //
 // Completely mimic the behaviour of "fxc.exe" in the specific cases related
