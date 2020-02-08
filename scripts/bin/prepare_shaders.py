@@ -9,8 +9,9 @@ from stat import S_IREAD, S_IRGRP, S_IROTH, S_IWUSR
 from subprocess import Popen, PIPE
 import sys
 
-inc_r = re.compile(r'#include\s+"(.*)"')
+inc_r = re.compile(r'#\s*include\s+"(.*)"')
 xbox_reg_r = re.compile(r'\[XBOX\]')
+pc_reg_r = re.compile(r'\s*\[PC\]\s*')
 blank_r = re.compile(r'^\s*$')
 start_r = re.compile(r'^\s*//\s*(STATIC|DYNAMIC|SKIP|CENTROID)\s*:\s*(.*)$')
 init_r = re.compile(r'\[\s*=\s*([^\]]+)\]')
@@ -58,8 +59,8 @@ def parse_file(file_name, ver):
         not_match = re.compile(r'\[ps\d+\w?\]')
         sh_match = re.compile(r'\[vs(\d+\w?)\]')
 
-    def process_combo(regex, l, _init, out):
-        c = regex.match(l)
+    def process_combo(regex, line, _init, out):
+        c = regex.match(pc_reg_r.sub('', line))
         if _init:
             out.append(Combo(c.group(1), c.group(2), c.group(3), _init.group(1)))
         else:
@@ -67,8 +68,8 @@ def parse_file(file_name, ver):
 
     static = []
     dynamic = []
-    centroids = []
     skip = []
+    mask = 0
 
     (lines, files) = read_file(file_name)
     for line in lines:
@@ -82,7 +83,7 @@ def parse_file(file_name, ver):
         elif not_match.search(line):
             continue
         spec = sh_match.findall(line)
-        if len(spec) > 0 and ver not in spec:
+        if len(spec) > 0 and ver not in [s.lower() for s in spec]:
             continue
         init_val = init_r.search(line)
         if line_match.group(1) == 'STATIC':
@@ -90,12 +91,10 @@ def parse_file(file_name, ver):
         elif line_match.group(1) == 'DYNAMIC':
             process_combo(dynamic_combo_r, line, init_val, dynamic)
         elif line_match.group(1) == "CENTROID":
-            centroids.append(int(centroid_r.match(line).group(1)))
+            mask |= 1 << int(pc_reg_r.sub('', centroid_r.match(line).group(1)))
         else:
-            skip.append(sh_match.split(line_match.group(2))[0].strip())
-    mask = 0
-    for c in centroids:
-        mask += 1 << c
+            skip.append(pc_reg_r.sub('', sh_match.split(line_match.group(2))[0]).strip())
+
     return static, dynamic, skip, mask, files
 
 
@@ -231,7 +230,7 @@ def main(argv):
                 continue
 
             full = dir_name / li.strip(' \n\t')
-            is_vs = re.search(r'_vs\d+\w?$', full.stem) != None
+            is_vs = re.search(r'_vs\d+\w?$', full.stem) is not None
             loc_ver = ver
             if is_vs and ver == "20b":
                 loc_ver = "20"
