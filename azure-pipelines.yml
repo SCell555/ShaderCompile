@@ -14,14 +14,34 @@ steps:
      platform: x64
  - task: CopyFiles@2
    inputs:
-     SourceFolder: 'x64\Release'
-     Contents: '*.exe'
-     TargetFolder: $(Build.ArtifactStagingDirectory)
- - task: CopyFiles@2
-   inputs:
      SourceFolder: 'scripts'
      Contents: '**'
      TargetFolder: $(Build.ArtifactStagingDirectory)
+ - task: CopyFiles@2
+   inputs:
+     SourceFolder: 'x64/Release'
+     Contents: '*.exe'
+     TargetFolder: $(Build.ArtifactStagingDirectory)/bin
  - task: PublishPipelineArtifact@1
    inputs:
      targetPath: $(Build.ArtifactStagingDirectory)
+ - task: ArchiveFiles@2
+   inputs:
+     rootFolderOrFile: $(Build.ArtifactStagingDirectory)
+     includeRootFolder: false
+     archiveType: 7z
+     archiveFile: $(Build.ArtifactStagingDirectory)/ShaderCompile$(Build.BuildId).7z
+ - task: GitHubRelease@1
+   inputs:
+     gitHubConnection: 'SCell555'
+     repositoryName: '$(Build.Repository.Name)'
+     action: 'create'
+     target: '$(Build.SourceVersion)'
+     tagSource: 'userSpecifiedTag'
+     tag: 'build_$(Build.BuildId)_$(Build.BuildNumber)'
+     releaseNotesSource: 'inline'
+     changeLogCompareToRelease: 'lastFullRelease'
+     changeLogType: 'commitBased'
+     assets: |
+       $(Build.ArtifactStagingDirectory)/ShaderCompile$(Build.BuildId).7z
+       $(Build.ArtifactStagingDirectory)/bin/*.exe
