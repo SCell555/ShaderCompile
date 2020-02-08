@@ -33,7 +33,7 @@ steps:
      archiveFile: $(Build.ArtifactStagingDirectory)/ShaderCompile$(Build.BuildId).7z
  - task: GitHubRelease@1
    inputs:
-     gitHubConnection: 'SCell555'
+     gitHubConnection: 'release'
      repositoryName: '$(Build.Repository.Name)'
      action: 'create'
      target: '$(Build.SourceVersion)'
