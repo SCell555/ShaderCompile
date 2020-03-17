@@ -14,7 +14,6 @@
 #define NOMCX
 #define NOIME
 #include <windows.h>
-#undef PostMessage
 
 #include "DbgHelp.h"
 #include "conio.h"
@@ -27,6 +26,7 @@
 #include <iomanip>
 #include <regex>
 #include <thread>
+#include <filesystem>
 
 #include "basetypes.h"
 #include "cfgprocessor.h"
@@ -46,6 +46,7 @@
 #include "movingaverage.hpp"
 #include "termcolors.hpp"
 #include "strmanip.hpp"
+#include "shaderparser.h"
 
 extern "C" {
 #define _7ZIP_ST
@@ -74,8 +75,8 @@ static uint64 g_numShaders = 0, g_numCompileCommands = 0, g_numStaticCombos = 0;
 
 using Clock = std::chrono::high_resolution_clock;
 std::string g_pShaderPath;
-static std::string g_pShaderConfigFile;
-static char g_ExeDir[MAX_PATH];
+std::string g_pShaderVersion;
+uint32_t g_pShaderCRC;
 static Clock::time_point g_flStartTime;
 bool g_bVerbose         = false;
 static bool g_bVerbose2 = false;
@@ -477,19 +478,6 @@ namespace Private
 static CSwitchableMutex<Private::g_mtxSyncObjMT> g_mtxGlobal;
 }; // namespace Threading
 
-namespace SourceCodeHasher
-{
-	char* stb_include_load_file( const char* filename, size_t& plen )
-	{
-		CSharedFile* file = fileCache.Get( filename );
-		plen              = file->Size();
-		char* text        = static_cast<char*>( malloc( file->Size() + 1 ) );
-		memcpy( text, file->Data(), file->Size() );
-		text[file->Size()] = 0;
-		return text;
-	}
-} // namespace SourceCodeHasher
-
 // Access to global data should be synchronized by these global locks
 #define GLOBAL_DATA_MTX_LOCK()   Threading::g_mtxGlobal.Lock()
 #define GLOBAL_DATA_MTX_UNLOCK() Threading::g_mtxGlobal.Unlock()
@@ -605,7 +593,7 @@ static void GetVCSFilenames( gsl::span<char> pszMainOutFileName, const ShaderInf
 	{
 		std::cout << "mkdir " << pszMainOutFileName.data() << std::endl;
 		// doh. . need to make the directory that the vcs file is going to go into.
-		_mkdir( pszMainOutFileName.data() );
+		std::filesystem::create_directories( pszMainOutFileName.data() );
 	}
 
 	strcat_s( pszMainOutFileName.data(), pszMainOutFileName.size(), "\\" );
@@ -776,7 +764,7 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	// now, sort. sentinel key will end up at end
 	std::sort( StaticComboHeaders.begin(), StaticComboHeaders.end(), CompareComboIds );
 
-	const unsigned int crc32 = SourceCodeHasher::CalculateCRC( shaderInfo.m_pShaderSrc );
+	//const unsigned int crc32 = SourceCodeHasher::CalculateCRC( shaderInfo.m_pShaderSrc );
 
 	//
 	// Shader file stream buffer
@@ -791,7 +779,7 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 		shaderInfo.m_Flags,
 		shaderInfo.m_CentroidMask,
 		gsl::narrow<uint32>( StaticComboHeaders.size() ),
-		crc32
+		g_pShaderCRC //crc32
 	};
 	ShaderFile.write( reinterpret_cast<const char*>( &header ), sizeof( header ) );
 
@@ -972,7 +960,6 @@ protected:
 		size_t dwIndex;
 		DWORD dwSvcThreadId;
 		uint64 iRunningCommand;
-		PROCESS_INFORMATION pi;
 		SubProcessKernelObjects* pCommObjs;
 		std::future<int> pThread;
 	};
@@ -1031,7 +1018,7 @@ void CWorkerAccumState<TMutexType>::QuitSubs()
 
 	for ( SubProcess* pSp : m_arrSubProcessInfos )
 	{
-		if ( !( pSp->pi.hProcess || ( pSp->pThread.valid() && pSp->pThread.wait_for( 0s ) == std::future_status::timeout ) ) )
+		if ( !( pSp->pThread.valid() && pSp->pThread.wait_for( 0s ) == std::future_status::timeout ) )
 			continue;
 		SubProcessKernelObjects_Memory shrmem( pSp->pCommObjs );
 		if ( void* pvMemory = shrmem.Lock() )
@@ -1040,9 +1027,7 @@ void CWorkerAccumState<TMutexType>::QuitSubs()
 			shrmem.Unlock();
 		}
 
-		if ( pSp->pi.hProcess )
-			m_arrWait.emplace_back( pSp->pi.hProcess );
-		else if ( pSp->pThread.valid() )
+		if ( pSp->pThread.valid() )
 			m_arrWait2.emplace_back( pSp->pThread );
 	}
 
@@ -1058,11 +1043,6 @@ void CWorkerAccumState<TMutexType>::QuitSubs()
 
 	for ( SubProcess* pSp : m_arrSubProcessInfos )
 	{
-		if ( pSp->pi.hThread )
-			CloseHandle( pSp->pi.hThread );
-		if ( pSp->pi.hProcess )
-			CloseHandle( pSp->pi.hProcess );
-
 		delete pSp->pCommObjs;
 		delete pSp;
 	}
@@ -1111,25 +1091,7 @@ void CWorkerAccumState<TMutexType>::PrepareSubProcess( SubProcess** ppSp, SubPro
 		sprintf_s( chBaseNameBuffer, "SHCMPL_SUB_%08lX_%08llX_%08lX", pSp->dwSvcThreadId, time( nullptr ), GetCurrentProcessId() );
 		pCommObjs = pSp->pCommObjs = new SubProcessKernelObjects_Create( chBaseNameBuffer );
 
-		ZeroMemory( &pSp->pi, sizeof( pSp->pi ) );
-
-		if ( !cmdLine.isSet( "-local" ) )
-		{
-			STARTUPINFO si;
-			ZeroMemory( &si, sizeof( si ) );
-			si.cb = sizeof( si );
-
-			char flags[32] = { 0 };
-			PrepareFlagsForSubprocess( flags );
-
-			char chCommandLine[0x100], chFileName[0x100];
-			sprintf_s( chFileName, "%s\\ShaderCompile.exe", g_ExeDir );
-			sprintf_s( chCommandLine, "-subprocess %s %s", chBaseNameBuffer, flags );
-			[[maybe_unused]] const BOOL bCreateResult = CreateProcess( chFileName, chCommandLine, nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, g_ExeDir, &si, &pSp->pi );
-			Assert( bCreateResult );
-		}
-		else
-			pSp->pThread = std::async( std::launch::async, ShaderCompile_Subprocess_Main, std::string( chBaseNameBuffer ), gFlags, true );
+		pSp->pThread = std::async( std::launch::async, ShaderCompile_Subprocess_Main, std::string( chBaseNameBuffer ), gFlags );
 
 		m_pMutex->Lock();
 		pSp->dwIndex = m_arrSubProcessInfos.size();
@@ -1527,11 +1489,19 @@ static void Shader_ParseShaderInfoFromCompileCommands( const CfgProcessor::CfgEn
 	}
 }
 
+namespace ConfigurationProcessing
+{
+	extern void SetupConfigurationDirect( const std::string& name, const std::string& version, uint32_t centroidMask,
+		const std::vector<Parser::Combo>& static_c, const std::vector<Parser::Combo>& dynamic_c,
+		const std::vector<std::string>& skip, const std::vector<std::string>& includes );
+}
+
 static void Shared_ParseListOfCompileCommands()
 {
+	using namespace std::literals;
 	const Clock::time_point tt_start = Clock::now();
 
-	char fileListFileName[1024];
+	/*char fileListFileName[1024];
 	if ( V_IsAbsolutePath( g_pShaderConfigFile.c_str() ) )
 		strcpy_s( fileListFileName, g_pShaderConfigFile.c_str() );
 	else
@@ -1543,7 +1513,27 @@ static void Shared_ParseListOfCompileCommands()
 		exit( -1 );
 	}
 
-	CfgProcessor::ReadConfiguration( fileListFileName );
+	CfgProcessor::ReadConfiguration( fileListFileName );*/
+
+	const std::string name = Parser::ConstructName( std::filesystem::path( *cmdLine.lastArgs[0] ).filename().string(), g_pShaderVersion );
+	if ( Parser::CheckCrc( ( std::filesystem::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), name, g_pShaderCRC ) && !cmdLine.isSet( "-force" ) )
+	{
+		exit( 0 );
+	}
+
+	std::vector<Parser::Combo> static_c, dynamic_c;
+	std::vector<std::string> skip;
+	uint32_t centroid_mask = 0;
+	std::vector<std::string> includes;
+
+	if ( !Parser::ParseFile( ( std::filesystem::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), g_pShaderVersion, static_c, dynamic_c, skip, centroid_mask, includes ) )
+	{
+		std::cout << clr::red << "Failed to parse " << *cmdLine.lastArgs[0] << clr::reset << std::endl;
+		exit( -1 );
+	}
+	Parser::WriteInclude( ( std::filesystem::path( g_pShaderPath ) / "include"sv / ( name + ".inc" ) ).string(), name, static_c, dynamic_c, skip );
+	ConfigurationProcessing::SetupConfigurationDirect( name, g_pShaderVersion, centroid_mask, static_c, dynamic_c, skip, includes );
+
 	CfgProcessor::DescribeConfiguration( g_arrCompileEntries );
 
 	for ( const CfgProcessor::CfgEntryInfo* pInfo = g_arrCompileEntries.get(); pInfo && pInfo->m_szName; ++pInfo )
@@ -1792,7 +1782,7 @@ int main( int argc, const char* argv[] )
 	}
 
 	cmdLine.overview = "Source shader compiler.";
-	cmdLine.syntax   = "ShaderCompile [OPTIONS]";
+	cmdLine.syntax   = "ShaderCompile [OPTIONS] file.fxc";
 	cmdLine.add( "", false, 0, 0, "Shows help", "-help", "-h", "/help", "/h" );
 	cmdLine.add( "", false, 0, 0, "Compiles shader with partial precission", "/Gpp", "--partial-precision" );
 	cmdLine.add( "", false, 0, 0, "Skips shader validation", "/Vd", "--no-validation" );
@@ -1804,10 +1794,11 @@ int main( int argc, const char* argv[] )
 	cmdLine.add( "", false, 0, 0, "Enables even more extended state printing", "-verbose2" );
 	cmdLine.add( "", false, 0, 0, "Enables preprocessor debug printing", "-verbose_preprocessor" );
 	cmdLine.add( "0", false, 1, 0, "Number of threads used, defaults to core count", "-threads", "/threads" );
+	cmdLine.add( "", false, 0, 0, "Calculate crc for shader", "-crc" );
+	cmdLine.add( "", false, 0, 0, "Generate only header", "-dynamic" );
+	cmdLine.add( "", false, 0, 0, "Skip crc check during compilation", "-force" );
+	cmdLine.add( "", true, 1, 0, "Sets shader version", "-v" );
 	cmdLine.add( "", true, 1, 0, "Base path for shaders", "-shaderpath" );
-	cmdLine.add( "", true, 1, 0, "Config file used for compilation", "-config" );
-	cmdLine.add( "", false, 1, 0, " ", "-subprocess" );
-	cmdLine.add( "", false, 0, 0, "Do not spawn any child subprocess", "-local" );
 
 	cmdLine.parse( argc, argv );
 
@@ -1818,6 +1809,7 @@ int main( int argc, const char* argv[] )
 		std::string usage;
 		cmdLine.getUsageDescriptions( usage, csbi.srWindow.Right - csbi.srWindow.Left + 1, ez::ezOptionParser::ALIGN );
 		std::cout << cmdLine.overview << "\n\n"
+				  << "Usage: " << cmdLine.syntax << "\n\n"
 				  << clr::green << clr::bold << "OPTIONS:\n"
 				  << clr::reset << usage << std::endl;
 		return 0;
@@ -1845,18 +1837,8 @@ int main( int argc, const char* argv[] )
 	if ( cmdLine.isSet( "/Od" ) )
 		gFlags |= D3DCOMPILE_SKIP_OPTIMIZATION;
 
-	/*
-	Special section of code implementing "-subprocess" flag
-	*/
-	if ( cmdLine.isSet( "-subprocess" ) )
-	{
-		std::string subprocess;
-		cmdLine.get( "-subprocess" )->getString( subprocess );
-		return ShaderCompile_Subprocess_Main( subprocess, gFlags, false );
-	}
-
 	std::vector<std::string> badOptions;
-	if ( !cmdLine.gotRequired( badOptions ) )
+	if ( !cmdLine.gotRequired( badOptions ) || cmdLine.lastArgs.size() != 1 )
 	{
 		std::cout << clr::red << clr::bold << "ERROR: Missing argument" << ( badOptions.size() == 1 ? ": " : "s:\n" ) << clr::reset;
 		for ( const auto& option : badOptions )
@@ -1874,15 +1856,41 @@ int main( int argc, const char* argv[] )
 		return -1;
 	}
 
-	// This needs to get called before VMPI is setup because in SDK mode, VMPI will change the args around.
-	strcpy_s( g_ExeDir, argv[0] );
-	V_StripFilename( g_ExeDir );
-	if ( g_ExeDir[0] == 0 )
-		strcpy_s( g_ExeDir, ".\\" );
-	V_FixSlashes( g_ExeDir );
+	cmdLine.get( "-v" )->getString( g_pShaderVersion );
+	if ( !Parser::ValidateVersion( g_pShaderVersion ) )
+	{
+		std::cout << clr::red << "Shader uses unknown shader version: " << clr::pinkish << g_pShaderVersion << clr::reset << std::endl;
+		return -1;
+	}
 
 	cmdLine.get( "-shaderpath" )->getString( g_pShaderPath );
-	cmdLine.get( "-config" )->getString( g_pShaderConfigFile );
+	if ( cmdLine.isSet( "-crc" ) )
+	{
+		const std::string name = Parser::ConstructName( std::filesystem::path( *cmdLine.lastArgs[0] ).filename().string(), g_pShaderVersion );
+		uint32_t crc = 0;
+		Parser::CheckCrc( ( std::filesystem::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), name, crc );
+		std::cout << crc << std::endl;
+		return 0;
+	}
+
+	if ( cmdLine.isSet( "-dynamic" ) )
+	{
+		using namespace std::literals;
+		std::vector<Parser::Combo> static_c, dynamic_c;
+		std::vector<std::string> skip;
+		uint32_t centroid_mask = 0;
+		std::vector<std::string> includes;
+
+		if ( !Parser::ParseFile( ( std::filesystem::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), g_pShaderVersion, static_c, dynamic_c, skip, centroid_mask, includes ) )
+		{
+			std::cout << clr::red << "Failed to parse " << *cmdLine.lastArgs[0] << clr::reset << std::endl;
+			return -1;
+		}
+		const std::string name = Parser::ConstructName( std::filesystem::path( *cmdLine.lastArgs[0] ).filename().string(), g_pShaderVersion );
+		Parser::WriteInclude( ( std::filesystem::path( g_pShaderPath ) / "include"sv / ( name + ".inc" ) ).string(), name, static_c, dynamic_c, skip );
+		return 0;
+	}
+
 	g_bVerbose = cmdLine.isSet( "-verbose" );
 	g_bVerbose2 = cmdLine.isSet( "-verbose2" );
 

@@ -36,6 +36,9 @@
     <ClCompile Include="include\jsoncpp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="shaderparser.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="cfgprocessor.h">
@@ -94,6 +97,9 @@
     </ClInclude>
     <ClInclude Include="termcolors.hpp">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="shaderparser.h">
+      <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

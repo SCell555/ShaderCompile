@@ -17,89 +17,31 @@
 
 #pragma comment( lib, "D3DCompiler" )
 
-CSharedFile::CSharedFile()
-	: m_pBaseAddr( nullptr )
-	, m_pData( nullptr )
-	, m_nSize( 0 )
-	, m_pFile( nullptr )
+CSharedFile::CSharedFile( std::vector<char>&& data ) : std::vector<char>( std::forward<std::vector<char>>( data ) )
 {
 }
 
-CSharedFile::~CSharedFile()
-{
-	UnmapViewOfFile( m_pBaseAddr );
-	CloseHandle( m_pFile );
-}
-
-CSharedFile* CSharedFile::CreateSharedFile( const char* fileName, const uint8* data, size_t size )
-{
-	CSharedFile* file = new CSharedFile();
-
-	char chBufferName[0x100] = { 0 };
-	sprintf_s( chBufferName, "shadercompile_file_%s", fileName );
-	file->m_pFile = CreateFileMapping( INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, gsl::narrow<DWORD>( size + sizeof( size_t ) ), chBufferName );
-	__assume( file->m_pFile );
-	void* vptr = file->m_pBaseAddr = MapViewOfFile( file->m_pFile, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
-	__assume( vptr );
-	uint8* ptr                        = static_cast<uint8*>( vptr );
-	*reinterpret_cast<size_t*>( ptr ) = size;
-	file->m_nSize                     = size;
-	ptr += sizeof( size_t );
-	file->m_pData = ptr;
-	memcpy_s( ptr, size, data, size );
-	return file;
-}
-
-CSharedFile* CSharedFile::CreateSharedFile( const char* fileName )
-{
-	CSharedFile* file = new CSharedFile();
-
-	char chBufferName[0x100] = { 0 };
-	sprintf_s( chBufferName, "shadercompile_file_%s", fileName );
-	file->m_pFile = OpenFileMapping( FILE_MAP_ALL_ACCESS, FALSE, chBufferName );
-	if ( !file->m_pFile )
-	{
-		delete file;
-		return nullptr;
-	}
-	void* vptr = file->m_pBaseAddr = MapViewOfFile( file->m_pFile, FILE_MAP_ALL_ACCESS, 0, 0, 0 );
-	__assume( vptr );
-	uint8* ptr		= static_cast<uint8*>( vptr );
-	file->m_nSize	= *reinterpret_cast<size_t*>( ptr );
-	ptr				+= sizeof( size_t );
-	file->m_pData	= ptr;
-	return file;
-}
-
-void FileCache::Add( const char* fileName, const uint8* data, size_t size )
+void FileCache::Add( const std::string& fileName, std::vector<char>&& data )
 {
 	const auto& it = m_map.find( fileName );
 	if ( it != m_map.end() )
 		return;
 
-	m_map.insert( { fileName, CSharedFile::CreateSharedFile( fileName, data, size ) } );
+	CSharedFile file( std::move( data ) );
+	m_map.emplace( fileName, std::move( file ) );
 }
 
-CSharedFile* FileCache::Get( char const* szFilename )
+const CSharedFile* FileCache::Get( const std::string& filename )
 {
 	// Search the cache first
-	const auto& it = m_map.find( szFilename );
-	if ( it != m_map.end() )
-		return it->second;
-
-	// Create the cached file data
-	CSharedFile* pData = CSharedFile::CreateSharedFile( szFilename );
-	if ( pData )
-		m_map.insert( { szFilename, pData } );
-
-	return pData;
+	const auto& find = m_map.find( filename );
+	if ( find != m_map.cend() )
+		return &find->second;
+	return nullptr;
 }
 
 void FileCache::Clear()
 {
-	for ( auto& it : m_map )
-		delete it.second;
-
 	m_map.clear();
 }
 
@@ -117,7 +59,7 @@ namespace Private
 	{
 		STDMETHOD( Open )( THIS_ D3D_INCLUDE_TYPE, LPCSTR pFileName, LPCVOID, LPCVOID* ppData, UINT* pBytes ) override
 		{
-			CSharedFile* file = fileCache.Get( pFileName );
+			const CSharedFile* file = fileCache.Get( pFileName );
 			if ( !file )
 				return E_FAIL;
 

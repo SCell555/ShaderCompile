@@ -25,6 +25,7 @@
 #include "termcolor/style.hpp"
 #include "termcolors.hpp"
 #include "strmanip.hpp"
+#include "shaderparser.h"
 
 // Type conversions should be controlled by programmer explicitly - shadercompile makes use of 64-bit integer arithmetics
 #pragma warning( error : 4244 )
@@ -856,6 +857,169 @@ static struct CAutoDestroyEntries
 	}
 } s_autoDestroyEntries;
 
+
+static std::map<std::string, std::array<std::string, 2>> shaderVersionMapping =
+{
+	{ "20b", { "ps_2_b", "vs_2_0" } },
+	{ "30", { "ps_3_0", "vs_3_0" } },
+	{ "40", { "ps_4_0", "vs_4_0" } },
+	{ "41", { "ps_4_1", "vs_4_1" } },
+	{ "50", { "ps_5_0", "vs_5_0" } },
+	{ "51", { "ps_5_1", "vs_5_1" } }
+};
+
+static int FastToLower( char c )
+{
+	int i = (unsigned char)c;
+	if ( i < 0x80 )
+		// Brutally fast branchless ASCII tolower():
+		i += ( ( ( ( 'A' - 1 ) - i ) & ( i - ( 'Z' + 1 ) ) ) >> 26 ) & 0x20;
+	else
+		i += isupper( i ) ? 0x20 : 0;
+	return i;
+}
+
+static char const* V_stristr( char const* pStr, char const* pSearch )
+{
+	if ( !pStr || !pSearch )
+		return 0;
+
+	char const* pLetter = pStr;
+
+	// Check the entire string
+	while ( *pLetter != 0 )
+	{
+		// Skip over non-matches
+		if ( FastToLower( (unsigned char)*pLetter ) == FastToLower( (unsigned char)*pSearch ) )
+		{
+			// Check for match
+			char const* pMatch = pLetter + 1;
+			char const* pTest = pSearch + 1;
+			while ( *pTest != 0 )
+			{
+				// We've run off the end; don't bother.
+				if ( *pMatch == 0 )
+					return 0;
+
+				if ( FastToLower( (unsigned char)*pMatch ) != FastToLower( (unsigned char)*pTest ) )
+					break;
+
+				++pMatch;
+				++pTest;
+			}
+
+			// Found a match!
+			if ( *pTest == 0 )
+				return pLetter;
+		}
+
+		++pLetter;
+	}
+
+	return 0;
+}
+
+void SetupConfigurationDirect( const std::string& name, const std::string& version, uint32_t centroidMask,
+								const std::vector<Parser::Combo>& static_c, const std::vector<Parser::Combo>& dynamic_c,
+								const std::vector<std::string>& skip, const std::vector<std::string>& includes )
+{
+	using namespace std::literals;
+
+	const auto& AddCombos = []( ComboGenerator& cg, const std::vector<Parser::Combo>& combos, bool staticC )
+	{
+		for ( const Parser::Combo& combo : combos )
+			cg.AddDefine( Define( combo.name.c_str(), combo.minVal, combo.maxVal, staticC ) );
+	};
+
+	CfgEntry cfg;
+	cfg.m_szName = s_strPool.emplace( name ).first->c_str();
+	cfg.m_szShaderSrc = s_strPool.emplace( includes[0] ).first->c_str();
+	// Combo generator
+	ComboGenerator& cg = *( cfg.m_pCg = new ComboGenerator );
+	CComplexExpression& exprSkip = *( cfg.m_pExpr = new CComplexExpression( &cg ) );
+
+	AddCombos( cg, dynamic_c, false );
+	AddCombos( cg, static_c, true );
+	exprSkip.Parse( ( std::accumulate( skip.begin(), skip.end(), "("s, []( const std::string& s, const std::string& sk ) { return s + sk + ")||("; } ) + "0)" ).c_str() );
+
+	CfgProcessor::CfgEntryInfo& info = cfg.m_eiInfo;
+	info.m_szName = cfg.m_szName;
+	info.m_szShaderFileName = cfg.m_szShaderSrc;
+	info.m_szShaderVersion = s_strPool.emplace( shaderVersionMapping[version][V_stristr( cfg.m_szName, "_vs" ) != nullptr] ).first->c_str();
+	info.m_numCombos = cg.NumCombos();
+	info.m_numDynamicCombos = cg.NumCombos( false );
+	info.m_numStaticCombos = cg.NumCombos( true );
+	info.m_nCentroidMask = centroidMask;
+
+	s_setEntries.insert( std::move( cfg ) );
+
+	char filename[1024];
+	for ( const std::string& file : includes )
+	{
+		if ( V_IsAbsolutePath( file.c_str() ) )
+			strcpy_s( filename, file.c_str() );
+		else
+			sprintf_s( filename, "%s\\%s", g_pShaderPath.c_str(), file.c_str() );
+
+		std::ifstream src( filename, std::ios::binary | std::ios::ate );
+		if ( !src )
+		{
+			std::cout << clr::pinkish << "Can't find \"" << clr::red << filename << clr::pinkish << "\"" << std::endl;
+			continue;
+		}
+
+		char justFilename[MAX_PATH];
+		const char* pLastSlash = Max( strrchr( file.c_str(), '/' ), strrchr( file.c_str(), '\\' ) );
+		if ( pLastSlash )
+			strcpy_s( justFilename, pLastSlash + 1 );
+		else
+			strcpy_s( justFilename, file.c_str() );
+
+		if ( g_bVerbose )
+			std::cout << "adding file to cache: \"" << clr::green << justFilename << clr::reset << "\"" << std::endl;
+
+		std::vector<char> data( gsl::narrow<size_t>( src.tellg() ) );
+		src.clear();
+		src.seekg( 0, std::ios::beg );
+		src.read( data.data(), data.size() );
+
+		fileCache.Add( justFilename, std::move( data ) );
+	}
+
+	uint64 nCurrentCommand = 0;
+	for ( auto it = s_setEntries.rbegin(), itEnd = s_setEntries.rend(); it != itEnd; ++it )
+	{
+		// We establish a command mapping for the beginning of the entry
+		ComboHandleImpl chi;
+		chi.Initialize( nCurrentCommand, &*it );
+		s_mapComboCommands.emplace( nCurrentCommand, chi );
+
+		// We also establish mapping by either splitting the
+		// combos into 500 intervals or stepping by every 1000 combos.
+		const uint64 iPartStep = Max<uint64>( 1000, chi.m_numCombos / 500 );
+		for ( uint64 iRecord = nCurrentCommand + iPartStep; iRecord < nCurrentCommand + chi.m_numCombos; iRecord += iPartStep )
+		{
+			uint64 iAdvance = iPartStep;
+			chi.AdvanceCommands( iAdvance );
+			s_mapComboCommands.emplace( iRecord, chi );
+		}
+
+		nCurrentCommand += chi.m_numCombos;
+	}
+
+	// Establish the last command terminator
+	{
+		static CfgEntry s_term;
+		s_term.m_eiInfo.m_iCommandStart = s_term.m_eiInfo.m_iCommandEnd = nCurrentCommand;
+		s_term.m_eiInfo.m_numCombos = s_term.m_eiInfo.m_numStaticCombos = s_term.m_eiInfo.m_numDynamicCombos = 1;
+		s_term.m_eiInfo.m_szName = s_term.m_eiInfo.m_szShaderFileName = "";
+		ComboHandleImpl chi;
+		chi.m_iTotalCommand = nCurrentCommand;
+		chi.m_pEntry = &s_term;
+		s_mapComboCommands.emplace( nCurrentCommand, chi );
+	}
+}
+
 static void ProcessConfiguration( const char* pConfigFile )
 {
 	{
@@ -938,7 +1102,7 @@ static void ProcessConfiguration( const char* pConfigFile )
 			src.seekg( 0, std::ios::beg );
 			src.read( data.data(), data.size() );
 
-			fileCache.Add( justFilename, reinterpret_cast<const uint8*>( data.data() ), data.size() );
+			fileCache.Add( justFilename, std::move( data ) );
 		}
 	}
 

@@ -17,25 +17,15 @@
 
 #include "flat_map.hpp"
 
-typedef void *HANDLE;
-
-class CSharedFile final
+class CSharedFile final : private std::vector<char>
 {
-	CSharedFile();
-
 public:
-	~CSharedFile();
-	static CSharedFile* CreateSharedFile( const char* fileName, const uint8* data, size_t size );
-	static CSharedFile* CreateSharedFile( const char* fileName );
+	CSharedFile( std::vector<char>&& data );
+	using std::vector<char>::vector;
+	~CSharedFile() = default;
 
-	[[nodiscard]] void* Data() const { return m_pData; }
-	[[nodiscard]] size_t Size() const { return m_nSize; }
-
-private:
-	void* m_pBaseAddr;
-	void* m_pData;
-	size_t m_nSize;
-	HANDLE m_pFile;
+	[[nodiscard]] const void* Data() const { return data(); }
+	[[nodiscard]] size_t Size() const { return size(); }
 };
 
 class FileCache final
@@ -44,15 +34,14 @@ public:
 	FileCache() = default;
 	~FileCache() { Clear(); }
 
-	void Add( const char* fileName, const uint8* data, size_t size );
+	void Add( const std::string& fileName, std::vector<char>&& data );
 
-	[[nodiscard]] CSharedFile* Get( char const* szFilename );
+	[[nodiscard]] const CSharedFile* Get( const std::string& filename );
 
 	void Clear();
 
 protected:
-	//typedef stdext::hash_map<std::string, CSharedFile*> Mapping;
-	typedef chobo::flat_map<std::string, CSharedFile*> Mapping;
+	typedef chobo::flat_map<std::string, CSharedFile> Mapping;
 	Mapping m_map;
 };
 

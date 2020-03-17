@@ -173,10 +173,10 @@ bool SubProcessKernelObjects_Memory::Unlock()
 		SetEvent( m_pObjs->m_hEvent[!m_pObjs->m_dwCookie] );
 		Sleep( 1 );
 
-		return TRUE;
+		return true;
 	}
 
-	return FALSE;
+	return false;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -212,19 +212,8 @@ CSubProcessResponse::CSubProcessResponse( const void* pvMemory )
 	m_szListing = reinterpret_cast<const char*>( *pBytes ? pBytes : nullptr );
 }
 
-static LONG __stdcall ShaderCompile_Subprocess_ExceptionHandler( struct _EXCEPTION_POINTERS* ExceptionInfo )
+int ShaderCompile_Subprocess_Main( std::string szSubProcessData, DWORD flags )
 {
-	Assert( !"ShaderCompile_Subprocess_ExceptionHandler" );
-	::TerminateProcess( ::GetCurrentProcess(), ExceptionInfo->ExceptionRecord->ExceptionCode );
-	return EXCEPTION_EXECUTE_HANDLER; // (never gets here anyway)
-}
-
-int ShaderCompile_Subprocess_Main( std::string szSubProcessData, DWORD flags, bool local )
-{
-	// Set our crash handler
-	if ( !local )
-		SetUnhandledExceptionFilter( ShaderCompile_Subprocess_ExceptionHandler );
-
 	// Get our kernel objects
 	SubProcessKernelObjects_Open objs( szSubProcessData.c_str() );
 

@@ -100,6 +100,6 @@ protected:
 	const char* m_szListing;
 };
 
-int ShaderCompile_Subprocess_Main( std::string szSubProcessData, unsigned long flags, bool local );
+int ShaderCompile_Subprocess_Main( std::string szSubProcessData, unsigned long flags );
 
 #endif // #ifndef SUBPROCESS_H
