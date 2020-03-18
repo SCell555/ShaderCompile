@@ -1783,22 +1783,24 @@ int main( int argc, const char* argv[] )
 
 	cmdLine.overview = "Source shader compiler.";
 	cmdLine.syntax   = "ShaderCompile [OPTIONS] file.fxc";
-	cmdLine.add( "", false, 0, 0, "Shows help", "-help", "-h", "/help", "/h" );
-	cmdLine.add( "", false, 0, 0, "Compiles shader with partial precission", "/Gpp", "--partial-precision" );
-	cmdLine.add( "", false, 0, 0, "Skips shader validation", "/Vd", "--no-validation" );
-	cmdLine.add( "", false, 0, 0, "Disables preshader generation", "/Op", "--disable-preshader" );
-	cmdLine.add( "", false, 0, 0, "Directs the compiler to not use flow-control constructs where possible", "/Gfa", "--no-flow-control" );
-	cmdLine.add( "", false, 0, 0, "Directs the compiler to use flow-control constructs where possible", "/Gfp", "--prefer-flow-control" );
-	cmdLine.add( "", false, 0, 0, "Disables shader optimization", "/Od", "--disable-optimization" );
-	cmdLine.add( "", false, 0, 0, "Enables extended state printing", "-verbose" );
-	cmdLine.add( "", false, 0, 0, "Enables even more extended state printing", "-verbose2" );
-	cmdLine.add( "", false, 0, 0, "Enables preprocessor debug printing", "-verbose_preprocessor" );
+	cmdLine.add( "", true, 1, 0, "Sets shader version", "-ver", "/ver" );
+	cmdLine.add( "", true, 1, 0, "Base path for shaders", "-shaderpath", "/shaderpath" );
+	cmdLine.add( "", false, 0, 0, "Skip crc check during compilation", "-force", "/force" );
+	cmdLine.add( "", false, 0, 0, "Calculate crc for shader", "-crc", "/crc" );
+	cmdLine.add( "", false, 0, 0, "Generate only header", "-dynamic", "/dynamic" );
 	cmdLine.add( "0", false, 1, 0, "Number of threads used, defaults to core count", "-threads", "/threads" );
-	cmdLine.add( "", false, 0, 0, "Calculate crc for shader", "-crc" );
-	cmdLine.add( "", false, 0, 0, "Generate only header", "-dynamic" );
-	cmdLine.add( "", false, 0, 0, "Skip crc check during compilation", "-force" );
-	cmdLine.add( "", true, 1, 0, "Sets shader version", "-v" );
-	cmdLine.add( "", true, 1, 0, "Base path for shaders", "-shaderpath" );
+	cmdLine.add( "", false, 0, 0, "Shows help", "-help", "-h", "/help", "/h" );
+
+	cmdLine.add( "", false, 0, 0, "Verbose file cache and final shader info", "-verbose", "/verbose" );
+	cmdLine.add( "", false, 0, 0, "Verbose compile commands", "-verbose2", "/verbose2" );
+	cmdLine.add( "", false, 0, 0, "Enables preprocessor debug printing", "-verbose_preprocessor" );
+
+	cmdLine.add( "", false, 0, 0, "Compiles shader with partial precission", "/Gpp", "-partial-precision" );
+	cmdLine.add( "", false, 0, 0, "Skips shader validation", "/Vd", "-no-validation" );
+	cmdLine.add( "", false, 0, 0, "Disables preshader generation", "/Op", "-disable-preshader" );
+	cmdLine.add( "", false, 0, 0, "Directs the compiler to not use flow-control constructs where possible", "/Gfa", "-no-flow-control" );
+	cmdLine.add( "", false, 0, 0, "Directs the compiler to use flow-control constructs where possible", "/Gfp", "-prefer-flow-control" );
+	cmdLine.add( "", false, 0, 0, "Disables shader optimization", "/Od", "-disable-optimization" );
 
 	cmdLine.parse( argc, argv );
 
@@ -1856,7 +1858,7 @@ int main( int argc, const char* argv[] )
 		return -1;
 	}
 
-	cmdLine.get( "-v" )->getString( g_pShaderVersion );
+	cmdLine.get( "-ver" )->getString( g_pShaderVersion );
 	if ( !Parser::ValidateVersion( g_pShaderVersion ) )
 	{
 		std::cout << clr::red << "Shader uses unknown shader version: " << clr::pinkish << g_pShaderVersion << clr::reset << std::endl;
