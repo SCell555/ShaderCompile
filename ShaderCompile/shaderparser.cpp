@@ -165,6 +165,7 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 		fs::permissions( fileName, fs::perms::owner_read | fs::perms::owner_write );
 
 	{
+		fs::create_directories( fs::path( fileName ).parent_path() );
 		std::ofstream file( fileName, std::ios::trunc );
 		const auto& writeVars = [&]( const std::string_view& suffix, const std::vector<Combo>& vars, const std::string_view& ctor, uint32_t scale )
 		{
