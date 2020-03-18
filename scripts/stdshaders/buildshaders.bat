@@ -102,10 +102,8 @@ if not exist include mkdir include
 if not exist %shaderDir% mkdir %shaderDir%
 if not exist %shaderDir%\fxc mkdir %shaderDir%\fxc
 REM Nuke some files that we will add to later.
-if exist "%inputbase%_work.json" del /f /q "%inputbase%_work.json"
 
-set SHVER=20b
-
+set SHVER=20
 if defined IS30 (
 	set SHVER=30
 )
@@ -115,43 +113,8 @@ title %1 %SHVER%
 echo Building inc files and worklist for %inputbase%...
 
 set DYNAMIC=
-if "%dynamic_shaders%" == "1" set DYNAMIC=-d
-
-where py > nul
-if ERRORLEVEL 0 (
-	set PY=py
-	goto HavePy
-)
-where python > nul
-if ERRORLEVEL 0 (
-	set PY=python
-	goto HavePy
-)
-
 if "%dynamic_shaders%" == "1" set DYNAMIC=-Dynamic
-echo Python not found, building with powershell
 powershell -NoLogo -ExecutionPolicy Bypass -Command "%SrcDirBase%\devtools\bin\prepare_shaders.ps1 %DYNAMIC% -Version %SHVER% '%inputbase%.txt'"
-goto Prepared
-
-:HavePy
-
-%PY% "%SrcDirBase%\devtools\bin\prepare_shaders.py" %DYNAMIC% -v %SHVER% "%inputbase%.txt"
-
-:Prepared
-
-REM ****************
-REM Execute distributed process on work/build list
-REM ****************
-
-set shader_path_cd=%cd%
-if exist "%inputbase%_work.json" if not "%dynamic_shaders%" == "1" (
-	rem echo Running distributed shader compilation...
-
-	cd /D %ChangeToDir%
-	echo %shadercompilecommand% %SDKArgs% -shaderpath "%shader_path_cd:/=\%" -config "%inputbase%_work.json"
-	%shadercompilecommand% %SDKArgs% -shaderpath "%shader_path_cd:/=\%" -config "%inputbase%_work.json"
-	cd /D %shader_path_cd%
-)
 
 REM ****************
 REM PC Shader copy
