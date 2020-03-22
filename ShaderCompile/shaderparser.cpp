@@ -56,6 +56,8 @@ std::string Parser::ConstructName( const std::string& baseName, const std::strin
 {
 	std::string name, fileVer;
 	re2::RE2::PartialMatch( baseName, r::version, &name, &fileVer );
+	if ( ver == "20b"sv && name.rfind( "_vs"sv ) == name.length() - 3 )
+		return name + "20";
 	return name + ver;
 }
 
