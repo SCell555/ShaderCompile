@@ -30,6 +30,9 @@ set SDKArgs=-local
 if "%1" == "" goto usage
 set inputbase=%1
 
+REM ignore -dx9_30
+if /i "%6" == "-dx9_30" shift /6
+
 if /i "%6" == "-force30" goto set_force30_arg
 goto set_force_end
 :set_force30_arg
@@ -114,7 +117,7 @@ echo Building inc files and worklist for %inputbase%...
 
 set DYNAMIC=
 if "%dynamic_shaders%" == "1" set DYNAMIC=-Dynamic
-powershell -NoLogo -ExecutionPolicy Bypass -Command "%SrcDirBase%\devtools\bin\prepare_shaders.ps1 %DYNAMIC% -Version %SHVER% '%inputbase%.txt'"
+powershell -NoLogo -ExecutionPolicy Bypass -Command "%SrcDirBase%\devtools\bin\process_shaders.ps1 %DYNAMIC% -Version %SHVER% '%inputbase%.txt'"
 
 REM ****************
 REM PC Shader copy
