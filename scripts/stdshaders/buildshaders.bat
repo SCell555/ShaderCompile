@@ -87,7 +87,7 @@ goto end
 echo - ERROR: ShaderCompile.exe doesn't exist in devtools\bin
 goto end
 
-:NoShaderCompile
+:NoShaderCrc
 echo - ERROR: ShaderCrc.exe doesn't exist in devtools\bin
 goto end
 
