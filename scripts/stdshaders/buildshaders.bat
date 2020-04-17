@@ -61,7 +61,6 @@ REM ****************
 :set_mod_args
 
 if not exist "..\..\devtools\bin\ShaderCompile.exe" goto NoShaderCompile
-if not exist "..\..\devtools\bin\ShaderCrc.exe" goto NoShaderCrc
 set ChangeToDir=%SrcDirBase%\devtools\bin\
 
 if /i "%4" NEQ "-source" goto NoSourceDirSpecified
@@ -85,10 +84,6 @@ goto end
 
 :NoShaderCompile
 echo - ERROR: ShaderCompile.exe doesn't exist in devtools\bin
-goto end
-
-:NoShaderCompile
-echo - ERROR: ShaderCrc.exe doesn't exist in devtools\bin
 goto end
 
 REM ****************
