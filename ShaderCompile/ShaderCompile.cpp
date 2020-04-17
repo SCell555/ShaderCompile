@@ -1722,6 +1722,7 @@ static BOOL WINAPI CtrlHandler( DWORD signal )
 		if ( auto inst = ProcessCommandRange_Singleton::Instance() )
 			inst->Stop();
 		PrintCompileErrors();
+		SetThreadExecutionState( ES_CONTINUOUS );
 	}
 
 	return FALSE;
@@ -1878,12 +1879,14 @@ int main( int argc, const char* argv[] )
 
 	// Setting up the minidump handlers
 	SetUnhandledExceptionFilter( ExceptionFilter );
+	SetThreadExecutionState( ES_CONTINUOUS | ES_SYSTEM_REQUIRED );
 	Shared_ParseListOfCompileCommands();
 
 	std::cout << "\rCompiling " << clr::green << PrettyPrint( g_numCompileCommands ) << clr::reset << " commands in " << clr::green << PrettyPrint( g_numStaticCombos ) << clr::reset << " static combos.                      \r";
 	CompileShaders();
 
 	WriteShaders();
+	SetThreadExecutionState( ES_CONTINUOUS );
 
 	return g_Master_ShaderHadError.GetNumStrings();
 }
