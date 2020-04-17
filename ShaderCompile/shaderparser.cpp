@@ -38,6 +38,10 @@ namespace r
 	static const RE2 dynamic_combo( R"reg(^\s*//\s*DYNAMIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)")reg" );
 	static const RE2 centroid( R"reg(^\s*//\s*CENTROID\s*:\s*TEXCOORD(\d+)\s*$)reg" );
 	static const RE2 version( R"reg(^(.*_[vp]s)(\d+\w?))reg" );
+	static const RE2 c_comment_start( R"reg(^(.*)\/\*)reg");
+	static const RE2 c_comment_end( R"reg(\*\/(.*)$)reg");
+	static const RE2 c_inline_comment( R"reg(^(.*)\/\*.*?\*\/(.*))reg");
+	static const RE2 cpp_comment( R"reg(^(.*)\/\/$)reg");
 }
 
 Parser::Combo::Combo( const std::string& name, int32_t min, int32_t max, const std::string& init_val ) : name( name ), minVal( min ), maxVal( max ), initVal( init_val )
@@ -73,9 +77,30 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 		std::cout << clr::red << "File \""sv << rawName << "\" does not exist"sv << clr::reset << std::endl;
 		return false;
 	}
-	for ( std::string line, incl; std::getline( file, line ); )
+
+	bool cComment = false;
+	for ( std::string line, reducedLine, incl, c1, c2; std::getline( file, line ); )
 	{
-		if ( re2::RE2::PartialMatch( line, r::inc, &incl ) )
+		if ( !cComment )
+		{
+			while ( re2::RE2::FullMatch( line, r::c_inline_comment, &c1, nullptr, &c2 ) )
+				line = c1 + c2;
+		}
+
+		if ( !cComment && re2::RE2::FullMatch( line, r::c_comment_start, &c1 ) )
+		{
+			line = c1;
+			cComment = true;
+		}
+		else if ( cComment && re2::RE2::FullMatch( line, r::c_comment_end, &c1 ) )
+		{
+			line = c1;
+			cComment = false;
+		}
+		else if ( cComment )
+			continue;
+		re2::RE2::FullMatch( line, r::cpp_comment, &reducedLine );
+		if ( re2::RE2::PartialMatch( reducedLine.empty() ? line : reducedLine, r::inc, &incl ) )
 		{
 			if ( !ReadFile( parent / incl, includes, func ) )
 				return false;
@@ -84,7 +109,10 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 		func( line );
 	}
 
-	return true;
+	if ( cComment )
+		std::cout << clr::red << "Unexpected end of  \""sv << rawName << clr::reset << std::endl;
+
+	return !cComment;
 }
 
 bool Parser::ParseFile( const std::string& name, const std::string& version, std::vector<Combo>& static_c, std::vector<Combo>& dynamic_c,
