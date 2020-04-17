@@ -188,7 +188,7 @@ CUtlBuffer::CUtlBuffer( int growSize, int initSize, int nFlags )
 	m_Put     = 0;
 	m_nTab    = 0;
 	m_nOffset = 0;
-	m_Flags   = static_cast<uint8>( nFlags );
+	m_Flags   = static_cast<uint8_t>( nFlags );
 	if ( ( initSize != 0 ) && !IsReadOnly() )
 	{
 		m_nMaxPut = -1;
@@ -211,7 +211,7 @@ CUtlBuffer::CUtlBuffer( void* pBuffer, int nSize, int nFlags )
 	m_Put     = 0;
 	m_nTab    = 0;
 	m_nOffset = 0;
-	m_Flags   = static_cast<uint8>( nFlags );
+	m_Flags   = static_cast<uint8_t>( nFlags );
 	if ( IsReadOnly() )
 	{
 		m_nMaxPut = nSize;
@@ -234,7 +234,7 @@ CUtlBuffer::CUtlBuffer( const void* pBuffer, int nSize, int nFlags )
 	m_Put     = 0;
 	m_nTab    = 0;
 	m_nOffset = 0;
-	m_Flags   = static_cast<uint8>( nFlags | READ_ONLY );
+	m_Flags   = static_cast<uint8_t>( nFlags | READ_ONLY );
 	m_nMaxPut = nSize;
 	SetOverflowFuncs( &CUtlBuffer::GetOverflow, &CUtlBuffer::PutOverflow );
 }
@@ -300,7 +300,7 @@ void CUtlBuffer::SetExternalBuffer( void* pMemory, int nSize, int nInitialPut, i
 	m_nTab    = 0;
 	m_Error   = 0;
 	m_nOffset = 0;
-	m_Flags   = static_cast<uint8>( nFlags );
+	m_Flags   = static_cast<uint8_t>( nFlags );
 	m_nMaxPut = -1;
 	AddNullTermination();
 }
@@ -318,7 +318,7 @@ void CUtlBuffer::AssumeMemory( void* pMemory, int nSize, int nInitialPut, int nF
 	m_nTab    = 0;
 	m_Error   = 0;
 	m_nOffset = 0;
-	m_Flags   = static_cast<uint8>( nFlags );
+	m_Flags   = static_cast<uint8_t>( nFlags );
 	m_nMaxPut = -1;
 	AddNullTermination();
 }
@@ -612,7 +612,7 @@ void CUtlBuffer::GetStringInternal( char* pString, size_t maxLenInChars )
 		return;
 	}
 
-	const size_t nCharsToRead = Min( static_cast<size_t>( nLen ), maxLenInChars ) - 1;
+	const size_t nCharsToRead = std::min( static_cast<size_t>( nLen ), maxLenInChars ) - 1;
 
 	Get( pString, gsl::narrow<int>( nCharsToRead ) );
 	pString[nCharsToRead] = 0;
@@ -1640,7 +1640,7 @@ void CUtlBuffer::Swap( CUtlBuffer& buf )
 //-----------------------------------------------------------------------------
 // Fast swap w/ a CUtlMemory.
 //-----------------------------------------------------------------------------
-void CUtlBuffer::Swap( CUtlMemory<uint8>& mem )
+void CUtlBuffer::Swap( CUtlMemory<uint8_t>& mem )
 {
 	m_Get     = 0;
 	m_Put     = mem.Count();

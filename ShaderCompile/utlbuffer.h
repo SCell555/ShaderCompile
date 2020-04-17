@@ -156,7 +156,7 @@ public:
 	void CopyBuffer( const void* pubData, int cubData );
 
 	void Swap( CUtlBuffer& buf );
-	void Swap( CUtlMemory<uint8>& mem );
+	void Swap( CUtlMemory<uint8_t>& mem );
 
 	// Resets the buffer; but doesn't free memory
 	void Clear();
@@ -174,7 +174,7 @@ public:
 	[[nodiscard]] short GetShort();
 	[[nodiscard]] unsigned short GetUnsignedShort();
 	[[nodiscard]] int GetInt();
-	[[nodiscard]] int64 GetInt64();
+	[[nodiscard]] int64_t GetInt64();
 	[[nodiscard]] int GetIntHex();
 	[[nodiscard]] unsigned int GetUnsignedInt();
 	[[nodiscard]] float GetFloat();
@@ -256,12 +256,12 @@ public:
 	//		PutString will not write a terminating character
 	void PutChar( char c );
 	void PutUnsignedChar( unsigned char uc );
-	void PutUint64( uint64 ub );
-	void PutInt16( int16 s16 );
+	void PutUint64( uint64_t ub );
+	void PutInt16( int16_t s16 );
 	void PutShort( short s );
 	void PutUnsignedShort( unsigned short us );
 	void PutInt( int i );
-	void PutInt64( int64 i );
+	void PutInt64( int64_t i );
 	void PutUnsignedInt( unsigned int u );
 	void PutFloat( float f );
 	void PutDouble( double d );
@@ -402,13 +402,13 @@ protected:
 	template <typename T>
 	void PutObject( T* src );
 
-	CUtlMemory<uint8> m_Memory;
+	CUtlMemory<uint8_t> m_Memory;
 	int m_Get;
 	int m_Put;
 
-	uint8 m_Error;
-	uint8 m_Flags;
-	uint8 m_Reserved;
+	uint8_t m_Error;
+	uint8_t m_Flags;
+	uint8_t m_Reserved;
 
 	int m_nTab;
 	int m_nMaxPut;
@@ -651,9 +651,9 @@ inline int CUtlBuffer::GetInt()
 	return i;
 }
 
-inline int64 CUtlBuffer::GetInt64()
+inline int64_t CUtlBuffer::GetInt64()
 {
-	int64 i;
+	int64_t i;
 	GetType( i, "%lld" );
 	return i;
 }
@@ -823,12 +823,12 @@ inline void CUtlBuffer::PutUnsignedChar( unsigned char c )
 	PutType( c, "%u" );
 }
 
-inline void CUtlBuffer::PutUint64( uint64 ub )
+inline void CUtlBuffer::PutUint64( uint64_t ub )
 {
 	PutType( ub, "%llu" );
 }
 
-inline void CUtlBuffer::PutInt16( int16 s16 )
+inline void CUtlBuffer::PutInt16( int16_t s16 )
 {
 	PutType( s16, "%d" );
 }
@@ -848,7 +848,7 @@ inline void CUtlBuffer::PutInt( int i )
 	PutType( i, "%d" );
 }
 
-inline void CUtlBuffer::PutInt64( int64 i )
+inline void CUtlBuffer::PutInt64( int64_t i )
 {
 	PutType( i, "%llu" );
 }

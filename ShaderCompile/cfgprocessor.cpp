@@ -6,6 +6,13 @@
 //
 //=============================================================================//
 
+#define WIN32_LEAN_AND_MEAN
+#define NOWINRES
+#define NOSERVICE
+#define NOMCX
+#define NOIME
+#define NOMINMAX
+
 #include "cfgprocessor.h"
 #include "d3dxfxc.h"
 
@@ -578,8 +585,8 @@ public:
 	[[nodiscard]] Define const* GetDefinesBase() const { return m_arrDefines.data(); }
 	[[nodiscard]] Define const* GetDefinesEnd() const { return m_arrDefines.data() + m_arrDefines.size(); }
 
-	[[nodiscard]] uint64 NumCombos() const;
-	[[nodiscard]] uint64 NumCombos( bool bStaticCombos ) const;
+	[[nodiscard]] uint64_t NumCombos() const;
+	[[nodiscard]] uint64_t NumCombos( bool bStaticCombos ) const;
 
 	// IEvaluationContext
 public:
@@ -606,18 +613,18 @@ void ComboGenerator::AddDefine( Define const& df )
 	m_arrVarSlots.emplace_back( 1 );
 }
 
-uint64 ComboGenerator::NumCombos() const
+uint64_t ComboGenerator::NumCombos() const
 {
 	return std::transform_reduce( m_arrDefines.cbegin(), m_arrDefines.cend(), 1ULL,
-		[]( const uint64& a, const uint64& b ) { return a * b; },
-		[]( const Define& d ) { return static_cast<uint64>( d.Max() ) - d.Min() + 1ULL; } );
+		[]( const uint64_t& a, const uint64_t& b ) { return a * b; },
+		[]( const Define& d ) { return static_cast<uint64_t>( d.Max() ) - d.Min() + 1ULL; } );
 }
 
-uint64 ComboGenerator::NumCombos( bool bStaticCombos ) const
+uint64_t ComboGenerator::NumCombos( bool bStaticCombos ) const
 {
 	return std::transform_reduce( m_arrDefines.cbegin(), m_arrDefines.cend(), 1ULL,
-		[]( const uint64& a, const uint64& b ) { return a * b; },
-		[bStaticCombos]( const Define& d ) { return d.IsStatic() == bStaticCombos ? static_cast<uint64>( d.Max() ) - d.Min() + 1ULL : 1ULL; } );
+		[]( const uint64_t& a, const uint64_t& b ) { return a * b; },
+		[bStaticCombos]( const Define& d ) { return d.IsStatic() == bStaticCombos ? static_cast<uint64_t>( d.Max() ) - d.Min() + 1ULL : 1ULL; } );
 }
 
 extern std::string g_pShaderPath;
@@ -656,9 +663,9 @@ static std::multiset<CfgEntry> s_setEntries;
 class ComboHandleImpl : public IEvaluationContext
 {
 public:
-	uint64 m_iTotalCommand;
-	uint64 m_iComboNumber;
-	uint64 m_numCombos;
+	uint64_t m_iTotalCommand;
+	uint64_t m_iComboNumber;
+	uint64_t m_numCombos;
 	CfgEntry const* m_pEntry;
 
 public:
@@ -675,17 +682,17 @@ public:
 
 	// External implementation
 public:
-	bool Initialize( uint64 iTotalCommand, const CfgEntry* pEntry );
-	bool AdvanceCommands( uint64& riAdvanceMore );
-	bool NextNotSkipped( uint64 iTotalCommand );
+	bool Initialize( uint64_t iTotalCommand, const CfgEntry* pEntry );
+	bool AdvanceCommands( uint64_t& riAdvanceMore );
+	bool NextNotSkipped( uint64_t iTotalCommand );
 	bool IsSkipped() { return m_pEntry->m_pExpr->Evaluate( this ) != 0; }
 	void FormatCommand( gsl::span<char> pchBuffer );
 	void FormatCommandHumanReadable( gsl::span<char> pchBuffer );
 };
 
-static std::map<uint64, ComboHandleImpl> s_mapComboCommands;
+static std::map<uint64_t, ComboHandleImpl> s_mapComboCommands;
 
-bool ComboHandleImpl::Initialize( uint64 iTotalCommand, const CfgEntry* pEntry )
+bool ComboHandleImpl::Initialize( uint64_t iTotalCommand, const CfgEntry* pEntry )
 {
 	m_iTotalCommand = iTotalCommand;
 	m_pEntry        = pEntry;
@@ -703,7 +710,7 @@ bool ComboHandleImpl::Initialize( uint64 iTotalCommand, const CfgEntry* pEntry )
 	return true;
 }
 
-bool ComboHandleImpl::AdvanceCommands( uint64& riAdvanceMore )
+bool ComboHandleImpl::AdvanceCommands( uint64_t& riAdvanceMore )
 {
 	if ( !riAdvanceMore )
 		return true;
@@ -728,7 +735,7 @@ bool ComboHandleImpl::AdvanceCommands( uint64& riAdvanceMore )
 	m_iComboNumber -= riAdvanceMore;
 	for ( pSetValues = pnValues, pSetDef = pDefVars; ( pSetValues < pnValuesEnd ) && ( riAdvanceMore > 0 ); ++pSetValues, ++pSetDef )
 	{
-		riAdvanceMore += ( static_cast<uint64>( pSetDef->Max() ) - *pSetValues );
+		riAdvanceMore += ( static_cast<uint64_t>( pSetDef->Max() ) - *pSetValues );
 		*pSetValues = pSetDef->Max();
 
 		const int iInterval = ( pSetDef->Max() - pSetDef->Min() + 1 );
@@ -739,7 +746,7 @@ bool ComboHandleImpl::AdvanceCommands( uint64& riAdvanceMore )
 	return true;
 }
 
-bool ComboHandleImpl::NextNotSkipped( uint64 iTotalCommand )
+bool ComboHandleImpl::NextNotSkipped( uint64_t iTotalCommand )
 {
 	// Get the pointers
 	int* const pnValues    = m_arrVarSlots.data();
@@ -969,7 +976,7 @@ void SetupConfigurationDirect( const std::string& name, const std::string& versi
 		}
 
 		char justFilename[MAX_PATH];
-		const char* pLastSlash = Max( strrchr( file.c_str(), '/' ), strrchr( file.c_str(), '\\' ) );
+		const char* pLastSlash = std::max( strrchr( file.c_str(), '/' ), strrchr( file.c_str(), '\\' ) );
 		if ( pLastSlash )
 			strcpy_s( justFilename, pLastSlash + 1 );
 		else
@@ -986,7 +993,7 @@ void SetupConfigurationDirect( const std::string& name, const std::string& versi
 		fileCache.Add( justFilename, std::move( data ) );
 	}
 
-	uint64 nCurrentCommand = 0;
+	uint64_t nCurrentCommand = 0;
 	for ( auto it = s_setEntries.rbegin(), itEnd = s_setEntries.rend(); it != itEnd; ++it )
 	{
 		// We establish a command mapping for the beginning of the entry
@@ -996,10 +1003,10 @@ void SetupConfigurationDirect( const std::string& name, const std::string& versi
 
 		// We also establish mapping by either splitting the
 		// combos into 500 intervals or stepping by every 1000 combos.
-		const uint64 iPartStep = Max<uint64>( 1000, chi.m_numCombos / 500 );
-		for ( uint64 iRecord = nCurrentCommand + iPartStep; iRecord < nCurrentCommand + chi.m_numCombos; iRecord += iPartStep )
+		const uint64_t iPartStep = std::max<uint64_t>( 1000, chi.m_numCombos / 500 );
+		for ( uint64_t iRecord = nCurrentCommand + iPartStep; iRecord < nCurrentCommand + chi.m_numCombos; iRecord += iPartStep )
 		{
-			uint64 iAdvance = iPartStep;
+			uint64_t iAdvance = iPartStep;
 			chi.AdvanceCommands( iAdvance );
 			s_mapComboCommands.emplace( iRecord, chi );
 		}
@@ -1088,7 +1095,7 @@ static void ProcessConfiguration( const char* pConfigFile )
 			}
 
 			char justFilename[MAX_PATH];
-			const char* pLastSlash = Max( strrchr( file.c_str(), '/' ), strrchr( file.c_str(), '\\' ) );
+			const char* pLastSlash = std::max( strrchr( file.c_str(), '/' ), strrchr( file.c_str(), '\\' ) );
 			if ( pLastSlash )
 				strcpy_s( justFilename, pLastSlash + 1 );
 			else
@@ -1106,7 +1113,7 @@ static void ProcessConfiguration( const char* pConfigFile )
 		}
 	}
 
-	uint64 nCurrentCommand = 0;
+	uint64_t nCurrentCommand = 0;
 	for ( auto it = s_setEntries.rbegin(), itEnd = s_setEntries.rend(); it != itEnd; ++it )
 	{
 		// We establish a command mapping for the beginning of the entry
@@ -1116,10 +1123,10 @@ static void ProcessConfiguration( const char* pConfigFile )
 
 		// We also establish mapping by either splitting the
 		// combos into 500 intervals or stepping by every 1000 combos.
-		const uint64 iPartStep = Max<uint64>( 1000, chi.m_numCombos / 500 );
-		for ( uint64 iRecord = nCurrentCommand + iPartStep; iRecord < nCurrentCommand + chi.m_numCombos; iRecord += iPartStep )
+		const uint64_t iPartStep = std::max<uint64_t>( 1000, chi.m_numCombos / 500 );
+		for ( uint64_t iRecord = nCurrentCommand + iPartStep; iRecord < nCurrentCommand + chi.m_numCombos; iRecord += iPartStep )
 		{
-			uint64 iAdvance = iPartStep;
+			uint64_t iAdvance = iPartStep;
 			chi.AdvanceCommands( iAdvance );
 			s_mapComboCommands.emplace( iRecord, chi );
 		}
@@ -1164,7 +1171,7 @@ void DescribeConfiguration( std::unique_ptr<CfgEntryInfo[]>& rarrEntries )
 	rarrEntries.reset( new CfgEntryInfo[ConfigurationProcessing::s_setEntries.size() + 1] );
 
 	CfgEntryInfo* pInfo    = rarrEntries.get();
-	uint64 nCurrentCommand = 0;
+	uint64_t nCurrentCommand = 0;
 
 	for ( auto it = ConfigurationProcessing::s_setEntries.rbegin(), itEnd = ConfigurationProcessing::s_setEntries.rend(); it != itEnd; ++it, ++pInfo )
 	{
@@ -1189,7 +1196,7 @@ void DescribeConfiguration( std::unique_ptr<CfgEntryInfo[]>& rarrEntries )
 	pInfo->m_iCommandEnd   = nCurrentCommand;
 }
 
-static const CPCHI_t& GetLessOrEq( uint64& k, const CPCHI_t& v )
+static const CPCHI_t& GetLessOrEq( uint64_t& k, const CPCHI_t& v )
 {
 	auto it = ConfigurationProcessing::s_mapComboCommands.lower_bound( k );
 	if ( ConfigurationProcessing::s_mapComboCommands.end() == it )
@@ -1210,10 +1217,10 @@ static const CPCHI_t& GetLessOrEq( uint64& k, const CPCHI_t& v )
 	return it->second;
 }
 
-ComboHandle Combo_GetCombo( uint64 iCommandNumber )
+ComboHandle Combo_GetCombo( uint64_t iCommandNumber )
 {
 	// Find earlier command
-	uint64 iCommandFound = iCommandNumber;
+	uint64_t iCommandFound = iCommandNumber;
 	const CPCHI_t emptyCPCHI;
 	CPCHI_t const& chiFound = GetLessOrEq( iCommandFound, emptyCPCHI );
 
@@ -1223,13 +1230,13 @@ ComboHandle Combo_GetCombo( uint64 iCommandNumber )
 	// Advance the handle as needed
 	CPCHI_t* pImpl = new CPCHI_t( chiFound );
 
-	uint64 iCommandFoundAdvance = iCommandNumber - iCommandFound;
+	uint64_t iCommandFoundAdvance = iCommandNumber - iCommandFound;
 	pImpl->AdvanceCommands( iCommandFoundAdvance );
 
 	return AsHandle( pImpl );
 }
 
-ComboHandle Combo_GetNext( uint64& riCommandNumber, ComboHandle& rhCombo, uint64 iCommandEnd )
+ComboHandle Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint64_t iCommandEnd )
 {
 	// Combo handle implementation
 	CPCHI_t* pImpl = FromHandle( rhCombo );
@@ -1239,7 +1246,7 @@ ComboHandle Combo_GetNext( uint64& riCommandNumber, ComboHandle& rhCombo, uint64
 		// We don't have a combo handle that corresponds to the command
 
 		// Find earlier command
-		uint64 iCommandFound = riCommandNumber;
+		uint64_t iCommandFound = riCommandNumber;
 		const CPCHI_t emptyCPCHI;
 		CPCHI_t const& chiFound = GetLessOrEq( iCommandFound, emptyCPCHI );
 
@@ -1250,7 +1257,7 @@ ComboHandle Combo_GetNext( uint64& riCommandNumber, ComboHandle& rhCombo, uint64
 		pImpl   = new CPCHI_t( chiFound );
 		rhCombo = AsHandle( pImpl );
 
-		uint64 iCommandFoundAdvance = riCommandNumber - iCommandFound;
+		uint64_t iCommandFoundAdvance = riCommandNumber - iCommandFound;
 		pImpl->AdvanceCommands( iCommandFoundAdvance );
 
 		if ( !pImpl->IsSkipped() )
@@ -1283,7 +1290,7 @@ ComboHandle Combo_GetNext( uint64& riCommandNumber, ComboHandle& rhCombo, uint64
 		rhCombo = nullptr;
 
 		// Retrieve the next combo handle data
-		uint64 iCommandLookup = riCommandNumber;
+		uint64_t iCommandLookup = riCommandNumber;
 		CPCHI_t emptyCPCHI;
 		CPCHI_t const& chiNext = GetLessOrEq( iCommandLookup, emptyCPCHI );
 		Assert( iCommandLookup == riCommandNumber && ( chiNext.m_pEntry ) );
@@ -1309,14 +1316,14 @@ void Combo_FormatCommandHumanReadable( ComboHandle hCombo, gsl::span<char> pchBu
 	pImpl->FormatCommandHumanReadable( pchBuffer );
 }
 
-uint64 Combo_GetCommandNum( ComboHandle hCombo )
+uint64_t Combo_GetCommandNum( ComboHandle hCombo )
 {
 	if ( CPCHI_t* pImpl = FromHandle( hCombo ) )
 		return pImpl->m_iTotalCommand;
 	return ~0ULL;
 }
 
-uint64 Combo_GetComboNum( ComboHandle hCombo )
+uint64_t Combo_GetComboNum( ComboHandle hCombo )
 {
 	if ( CPCHI_t* pImpl = FromHandle( hCombo ) )
 		return pImpl->m_iComboNumber;

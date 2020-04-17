@@ -126,13 +126,13 @@ CUtlSymbol CUtlSymbolTable::AddString( const char* pString )
 	const size_t len = strlen( pString ) + 1;
 
 	// Find a pool with space for this string, or allocate a new one.
-	size_t iPool = FindPoolWithSpace( gsl::narrow<uint16>( len ) );
+	size_t iPool = FindPoolWithSpace( gsl::narrow<uint16_t>( len ) );
 	if ( iPool == ~0ULL )
 	{
 		// Add a new pool.
-		const size_t newPoolSize = Max( len, MIN_STRING_POOL_SIZE );
+		const size_t newPoolSize = std::max( len, MIN_STRING_POOL_SIZE );
 		StringPool_t* pPool      = static_cast<StringPool_t*>( malloc( sizeof( StringPool_t ) + newPoolSize - 1 ) );
-		pPool->m_TotalLen        = gsl::narrow<uint16>( newPoolSize );
+		pPool->m_TotalLen        = gsl::narrow<uint16_t>( newPoolSize );
 		pPool->m_SpaceUsed       = 0;
 		iPool                    = m_StringPools.size();
 		m_StringPools.emplace_back( pPool );
@@ -146,11 +146,11 @@ CUtlSymbol CUtlSymbolTable::AddString( const char* pString )
 	const unsigned short iStringOffset = pPool->m_SpaceUsed;
 
 	memcpy( &pPool->m_Data[pPool->m_SpaceUsed], pString, len );
-	pPool->m_SpaceUsed += gsl::narrow<uint16>( len );
+	pPool->m_SpaceUsed += gsl::narrow<uint16_t>( len );
 
 	// didn't find, insert the string into the vector.
 	CStringPoolIndex index;
-	index.m_iPool   = gsl::narrow<uint16>( iPool );
+	index.m_iPool   = gsl::narrow<uint16_t>( iPool );
 	index.m_iOffset = iStringOffset;
 
 	const UtlSymId_t idx = m_Lookup.Insert( index );

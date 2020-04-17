@@ -3,11 +3,11 @@
 
 #include <iomanip>
 
-static std::string PrettyPrintNumber( uint64 k )
+static std::string PrettyPrintNumber( uint64_t k )
 {
 	char chCompileString[50] = { 0 };
 	char* pchPrint = chCompileString + sizeof( chCompileString ) - 3;
-	for ( uint64 j = 0; k > 0; k /= 10, ++j )
+	for ( uint64_t j = 0; k > 0; k /= 10, ++j )
 	{
 		( j && !( j % 3 ) ) ? ( *pchPrint-- = ',' ) : 0;
 		*pchPrint-- = '0' + char( k % 10 );
@@ -16,21 +16,21 @@ static std::string PrettyPrintNumber( uint64 k )
 	return pchPrint;
 }
 
-static void __PrettyPrintNumber( std::ios_base& s, uint64 k )
+static void __PrettyPrintNumber( std::ios_base& s, uint64_t k )
 {
 	dynamic_cast<std::ostream&>( s ) << PrettyPrintNumber( k );
 }
 
-static std::_Smanip<uint64> PrettyPrint( uint64 i )
+static std::_Smanip<uint64_t> PrettyPrint( uint64_t i )
 {
 	return { __PrettyPrintNumber, i };
 }
 
-static void __FormatTime( std::ios_base& s, int64 nInputSeconds )
+static void __FormatTime( std::ios_base& s, int64_t nInputSeconds )
 {
-	int64 nMinutes = nInputSeconds / 60;
-	const int64 nSeconds = nInputSeconds - nMinutes * 60;
-	const int64 nHours = nMinutes / 60;
+	int64_t nMinutes = nInputSeconds / 60;
+	const int64_t nSeconds = nInputSeconds - nMinutes * 60;
+	const int64_t nHours = nMinutes / 60;
 	nMinutes -= nHours * 60;
 
 	constexpr const char* const extra[2] = { "", "s" };
@@ -44,11 +44,11 @@ static void __FormatTime( std::ios_base& s, int64 nInputSeconds )
 		str << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
 }
 
-static void __FormatTime2( std::ios_base& s, int64 nInputSeconds )
+static void __FormatTime2( std::ios_base& s, int64_t nInputSeconds )
 {
-	int64 nMinutes = nInputSeconds / 60;
-	const int64 nSeconds = nInputSeconds - nMinutes * 60;
-	const int64 nHours = nMinutes / 60;
+	int64_t nMinutes = nInputSeconds / 60;
+	const int64_t nSeconds = nInputSeconds - nMinutes * 60;
+	const int64_t nHours = nMinutes / 60;
 	nMinutes -= nHours * 60;
 
 	constexpr const char* const extra[2] = { "", "s" };
@@ -62,12 +62,12 @@ static void __FormatTime2( std::ios_base& s, int64 nInputSeconds )
 		str << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
 }
 
-static std::_Smanip<int64> FormatTime( int64 i )
+static std::_Smanip<int64_t> FormatTime( int64_t i )
 {
 	return { __FormatTime, i };
 }
 
-static std::_Smanip<int64> FormatTimeShort( int64 i )
+static std::_Smanip<int64_t> FormatTimeShort( int64_t i )
 {
 	return { __FormatTime2, i };
 }

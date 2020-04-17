@@ -13,14 +13,12 @@
 #define NOSERVICE
 #define NOMCX
 #define NOIME
+#define NOMINMAX
+
 #include <windows.h>
 
 #include "DbgHelp.h"
-#include "conio.h"
 #include "d3dcompiler.h"
-#include "direct.h"
-#include "io.h"
-#include "sys/stat.h"
 #include <chrono>
 #include <future>
 #include <iomanip>
@@ -60,41 +58,43 @@ extern "C" {
 
 #include "LZMA.hpp"
 
-#define STATIC_STRLEN( str ) ( ARRAYSIZE( str ) - 1 )
-
 #pragma comment( lib, "DbgHelp" )
 
 // Type conversions should be controlled by programmer explicitly - shadercompile makes use of 64-bit integer arithmetics
 #pragma warning( error : 4244 )
 
+namespace fs = std::filesystem;
+
 static ez::ezOptionParser cmdLine;
 
 // Dealing with job list
 static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> g_arrCompileEntries;
-static uint64 g_numShaders = 0, g_numCompileCommands = 0, g_numStaticCombos = 0;
+static uint64_t g_numShaders = 0, g_numCompileCommands = 0, g_numStaticCombos = 0;
 
 using Clock = std::chrono::high_resolution_clock;
 std::string g_pShaderPath;
 std::string g_pShaderVersion;
 uint32_t g_pShaderCRC;
 static Clock::time_point g_flStartTime;
-bool g_bVerbose         = false;
+static DWORD gFlags		= 0;
+bool g_bVerbose			= false;
 static bool g_bVerbose2 = false;
 
 struct ShaderInfo_t
 {
 	ShaderInfo_t() { memset( this, 0, sizeof( *this ) ); }
 
-	uint64 m_nShaderCombo;
-	uint64 m_nTotalShaderCombos;
+	uint64_t m_nShaderCombo;
+	uint64_t m_nTotalShaderCombos;
 	const char* m_pShaderName;
 	const char* m_pShaderSrc;
 	unsigned m_CentroidMask;
-	uint64 m_nDynamicCombos;
-	uint64 m_nStaticCombo;
+	uint64_t m_nDynamicCombos;
+	uint64_t m_nStaticCombo;
 	unsigned m_Flags; // from IShader.h
 	char m_szShaderModel[12];
 };
+static CUtlStringMap<ShaderInfo_t> g_ShaderToShaderInfo;
 
 static void Shader_ParseShaderInfoFromCompileCommands( const CfgProcessor::CfgEntryInfo* pEntry, ShaderInfo_t& shaderInfo );
 
@@ -102,18 +102,18 @@ struct CByteCodeBlock
 {
 	CByteCodeBlock *m_pNext, *m_pPrev;
 	int m_nCRC32;
-	uint64 m_nComboID;
+	uint64_t m_nComboID;
 	size_t m_nCodeSize;
-	std::unique_ptr<uint8[]> m_ByteCode;
+	std::unique_ptr<uint8_t[]> m_ByteCode;
 
 	CByteCodeBlock()
 	{
 		m_ByteCode = nullptr;
 	}
 
-	CByteCodeBlock( const void* pByteCode, size_t nCodeSize, uint64 nComboID )
+	CByteCodeBlock( const void* pByteCode, size_t nCodeSize, uint64_t nComboID )
 	{
-		m_ByteCode.reset( new uint8[nCodeSize] );
+		m_ByteCode.reset( new uint8_t[nCodeSize] );
 		m_nComboID  = nComboID;
 		m_nCodeSize = nCodeSize;
 		memcpy( m_ByteCode.get(), pByteCode, nCodeSize );
@@ -128,26 +128,26 @@ static bool CompareDynamicComboIDs( const std::unique_ptr<CByteCodeBlock>& pA, c
 
 struct CStaticCombo // all the data for one static combo
 {
-	struct PackedCode : protected std::unique_ptr<uint8[]>
+	struct PackedCode : protected std::unique_ptr<uint8_t[]>
 	{
 		[[nodiscard]] size_t GetLength() const
 		{
-			if ( uint8* pb = get() )
+			if ( uint8_t* pb = get() )
 				return *reinterpret_cast<size_t*>( pb );
 			return 0;
 		}
-		[[nodiscard]] uint8* GetData() const
+		[[nodiscard]] uint8_t* GetData() const
 		{
-			if ( uint8* pb = get() )
+			if ( uint8_t* pb = get() )
 				return pb + sizeof( size_t );
 			return nullptr;
 		}
-		[[nodiscard]] uint8* AllocData( size_t len )
+		[[nodiscard]] uint8_t* AllocData( size_t len )
 		{
 			reset();
 			if ( len )
 			{
-				reset( new uint8[len + sizeof( size_t )] );
+				reset( new uint8_t[len + sizeof( size_t )] );
 				*reinterpret_cast<size_t*>( get() ) = len;
 			}
 			return GetData();
@@ -157,19 +157,19 @@ struct CStaticCombo // all the data for one static combo
 	};
 	CStaticCombo *m_pNext, *m_pPrev;
 private:
-	uint64 m_nStaticComboID;
+	uint64_t m_nStaticComboID;
 
 	std::vector<std::unique_ptr<CByteCodeBlock>> m_DynamicCombos;
 
 	PackedCode m_abPackedCode; // Packed code for entire static combo
 
 public:
-	[[nodiscard]] __forceinline uint64 Key() const
+	[[nodiscard]] __forceinline uint64_t Key() const
 	{
 		return m_nStaticComboID;
 	}
 
-	[[nodiscard]] __forceinline uint64 ComboId() const
+	[[nodiscard]] __forceinline uint64_t ComboId() const
 	{
 		return m_nStaticComboID;
 	}
@@ -189,7 +189,7 @@ public:
 		return m_DynamicCombos;
 	}
 
-	CStaticCombo( uint64 nComboID )
+	CStaticCombo( uint64_t nComboID )
 	{
 		m_nStaticComboID = nComboID;
 	}
@@ -199,7 +199,7 @@ public:
 		m_DynamicCombos.clear();
 	}
 
-	void AddDynamicCombo( uint64 nComboID, const void* pComboData, size_t nCodeSize )
+	void AddDynamicCombo( uint64_t nComboID, const void* pComboData, size_t nCodeSize )
 	{
 		m_DynamicCombos.emplace_back( std::make_unique<CByteCodeBlock>( pComboData, nCodeSize, nComboID ) );
 	}
@@ -209,13 +209,13 @@ public:
 		std::sort( m_DynamicCombos.begin(), m_DynamicCombos.end(), CompareDynamicComboIDs );
 	}
 
-	[[nodiscard]] uint8* AllocPackedCodeBlock( size_t nPackedCodeSize )
+	[[nodiscard]] uint8_t* AllocPackedCodeBlock( size_t nPackedCodeSize )
 	{
 		return m_abPackedCode.AllocData( nPackedCodeSize );
 	}
 };
 
-using StaticComboNodeHash_t = CUtlNodeHash<CStaticCombo, 7097, uint64>;
+using StaticComboNodeHash_t = CUtlNodeHash<CStaticCombo, 7097, uint64_t>;
 
 template <typename... Args>
 inline void Construct( StaticComboNodeHash_t** pMemory, const Args&... )
@@ -226,7 +226,7 @@ inline void Construct( StaticComboNodeHash_t** pMemory, const Args&... )
 using CShaderMap = CUtlStringMap<StaticComboNodeHash_t*>;
 static CShaderMap g_ShaderByteCode;
 
-static CStaticCombo* StaticComboFromDictAdd( const char* pszShaderName, uint64 nStaticComboId )
+static CStaticCombo* StaticComboFromDictAdd( const char* pszShaderName, uint64_t nStaticComboId )
 {
 	StaticComboNodeHash_t* &rpNodeHash = g_ShaderByteCode[pszShaderName];
 	if ( !rpNodeHash )
@@ -243,14 +243,12 @@ static CStaticCombo* StaticComboFromDictAdd( const char* pszShaderName, uint64 n
 	return pStaticCombo;
 }
 
-static CStaticCombo* StaticComboFromDict( const char* pszShaderName, uint64 nStaticComboId )
+static CStaticCombo* StaticComboFromDict( const char* pszShaderName, uint64_t nStaticComboId )
 {
 	if ( StaticComboNodeHash_t* pNodeHash = g_ShaderByteCode[pszShaderName] )
 		return pNodeHash->FindByKey( nStaticComboId );
 	return nullptr;
 }
-
-static CUtlStringMap<ShaderInfo_t> g_ShaderToShaderInfo;
 
 class CompilerMsgInfo
 {
@@ -272,8 +270,8 @@ protected:
 	int m_numTimesReported;
 };
 
-static CUtlStringMap<uint8> g_Master_ShaderHadError;
-static CUtlStringMap<uint8> g_Master_ShaderWrittenToDisk;
+static CUtlStringMap<uint8_t> g_Master_ShaderHadError;
+static CUtlStringMap<uint8_t> g_Master_ShaderWrittenToDisk;
 struct CompilerMsg
 {
 	CUtlStringMap<CompilerMsgInfo> warning;
@@ -433,7 +431,7 @@ public:
 	}
 
 private:
-	uint32 m_index;
+	uint32_t m_index;
 };
 
 enum Mode
@@ -548,7 +546,7 @@ static void FlushCombos( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamicComboBu
 		return;
 
 	size_t nCompressedSize;
-	uint8* pCompressedShader = LZMA::Compress( reinterpret_cast<uint8*>( pDynamicComboBuffer.Base() ), pDynamicComboBuffer.TellPut(), &nCompressedSize );
+	uint8_t* pCompressedShader = LZMA::Compress( reinterpret_cast<uint8_t*>( pDynamicComboBuffer.Base() ), pDynamicComboBuffer.TellPut(), &nCompressedSize );
 	// high 2 bits of length =
 	// 00 = bzip2 compressed
 	// 10 = uncompressed
@@ -565,21 +563,21 @@ static void FlushCombos( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamicComboBu
 	}
 	else
 	{
-		const unsigned long lFlagSize = 0x40000000 | gsl::narrow<uint32>( nCompressedSize );
+		const unsigned long lFlagSize = 0x40000000 | gsl::narrow<uint32_t>( nCompressedSize );
 		pBuf.Put( &lFlagSize, sizeof( lFlagSize ) );
-		pBuf.Put( pCompressedShader, gsl::narrow<uint32>( nCompressedSize ) );
+		pBuf.Put( pCompressedShader, gsl::narrow<uint32_t>( nCompressedSize ) );
 		delete[] pCompressedShader;
 		pnTotalFlushedSize += sizeof( lFlagSize ) + nCompressedSize;
 	}
 	pDynamicComboBuffer.Clear(); // start over
 }
 
-static void OutputDynamicCombo( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamicComboBuffer, CUtlBuffer& pBuf, uint64 nComboID, uint32 nComboSize, uint8* pComboCode )
+static void OutputDynamicCombo( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamicComboBuffer, CUtlBuffer& pBuf, uint64_t nComboID, uint32_t nComboSize, uint8_t* pComboCode )
 {
 	if ( pDynamicComboBuffer.TellPut() + nComboSize + 16 >= MAX_SHADER_UNPACKED_BLOCK_SIZE )
 		FlushCombos( pnTotalFlushedSize, pDynamicComboBuffer, pBuf );
 
-	pDynamicComboBuffer.PutUnsignedInt( gsl::narrow<uint32>( nComboID ) );
+	pDynamicComboBuffer.PutUnsignedInt( gsl::narrow<uint32_t>( nComboID ) );
 	pDynamicComboBuffer.PutUnsignedInt( nComboSize );
 	pDynamicComboBuffer.Put( pComboCode, nComboSize );
 }
@@ -588,8 +586,8 @@ static void GetVCSFilenames( gsl::span<char> pszMainOutFileName, const ShaderInf
 {
 	sprintf_s( pszMainOutFileName.data(), pszMainOutFileName.size(), "%s\\shaders\\fxc", g_pShaderPath.c_str() );
 
-	struct _stat buf;
-	if ( _stat( pszMainOutFileName.data(), &buf ) == -1 )
+	fs::directory_entry status( pszMainOutFileName.data() );
+	if ( !status.exists() )
 	{
 		std::cout << "mkdir " << pszMainOutFileName.data() << std::endl;
 		// doh. . need to make the directory that the vcs file is going to go into.
@@ -601,14 +599,15 @@ static void GetVCSFilenames( gsl::span<char> pszMainOutFileName, const ShaderInf
 	strcat_s( pszMainOutFileName.data(), pszMainOutFileName.size(), ".vcs" ); // Different extensions for main output file
 
 	// Check status of vcs file...
-	if ( _stat( pszMainOutFileName.data(), &buf ) != -1 )
+	status.assign( pszMainOutFileName.data() );
+	if ( status.exists() )
 	{
 		// The file exists, let's see if it's writable.
-		if ( !( buf.st_mode & _S_IWRITE ) )
+		if ( ( status.status().permissions() & ( fs::perms::owner_read | fs::perms::owner_write ) ) != ( fs::perms::owner_read | fs::perms::owner_write ) )
 		{
 			// It isn't writable. . we'd better change its permissions (or check it out possibly)
 			std::cout << clr::pinkish << "Warning: making " << clr::red << pszMainOutFileName.data() << clr::pinkish << " writable!" << clr::reset << std::endl;
-			_chmod( pszMainOutFileName.data(), _S_IREAD | _S_IWRITE );
+			fs::permissions( status, fs::perms::owner_read | fs::perms::owner_write );
 		}
 	}
 }
@@ -622,11 +621,11 @@ static void GetVCSFilenames( gsl::span<char> pszMainOutFileName, const ShaderInf
 // data that it uses might be updated by the main thread when built pieces
 // are received from the workers.
 //
-static constexpr uint32 STATIC_COMBO_HASH_SIZE = 73;
+static constexpr uint32_t STATIC_COMBO_HASH_SIZE = 73;
 
 struct StaticComboAuxInfo_t : StaticComboRecord_t
 {
-	uint32 m_nCRC32; // CRC32 of packed data
+	uint32_t m_nCRC32; // CRC32 of packed data
 	CStaticCombo* m_pByteCode;
 };
 
@@ -722,7 +721,7 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	std::vector<StaticComboAliasRecord_t> duplicateCombos;
 
 	// now, lets fill in our combo headers, sort, and write
-	for ( uint32 nChain = 0; nChain < StaticComboNodeHash_t::NumChains; nChain++ )
+	for ( uint32_t nChain = 0; nChain < StaticComboNodeHash_t::NumChains; nChain++ )
 	{
 		for ( CStaticCombo* pStatic = pByteCodeArray->Chain( nChain ).Head(); pStatic; pStatic = pStatic->Next() )
 		{
@@ -730,10 +729,10 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 			if ( code.GetLength() )
 			{
 				StaticComboAuxInfo_t hdr;
-				hdr.m_nStaticComboID  = gsl::narrow<uint32>( pStatic->ComboId() );
+				hdr.m_nStaticComboID  = gsl::narrow<uint32_t>( pStatic->ComboId() );
 				hdr.m_nFileOffset     = 0; // fill in later
 				hdr.m_nCRC32          = CRC32::ProcessSingleBuffer( code.GetData(), code.GetLength() );
-				const uint32 nHashIdx = hdr.m_nCRC32 % STATIC_COMBO_HASH_SIZE;
+				const uint32_t nHashIdx = hdr.m_nCRC32 % STATIC_COMBO_HASH_SIZE;
 				hdr.m_pByteCode       = pStatic;
 				// now, see if we have an identical static combo
 				bool bIsDuplicate = false;
@@ -774,11 +773,11 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	// ------ Header --------------
 	const ShaderHeader_t header {
 		SHADER_VCS_VERSION_NUMBER,
-		gsl::narrow_cast<int32>( shaderInfo.m_nTotalShaderCombos ), // this is not actually used in vertexshaderdx8.cpp for combo checking
-		gsl::narrow<int32>( shaderInfo.m_nDynamicCombos ),          // this is used
+		gsl::narrow_cast<int32_t>( shaderInfo.m_nTotalShaderCombos ), // this is not actually used in vertexshaderdx8.cpp for combo checking
+		gsl::narrow<int32_t>( shaderInfo.m_nDynamicCombos ),          // this is used
 		shaderInfo.m_Flags,
 		shaderInfo.m_CentroidMask,
-		gsl::narrow<uint32>( StaticComboHeaders.size() ),
+		gsl::narrow<uint32_t>( StaticComboHeaders.size() ),
 		g_pShaderCRC //crc32
 	};
 	ShaderFile.write( reinterpret_cast<const char*>( &header ), sizeof( header ) );
@@ -789,7 +788,7 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	// we will re write this one we know the offsets
 	ShaderFile.write( reinterpret_cast<const char*>( StaticComboHeaders.data() ), sizeof( StaticComboRecord_t ) * StaticComboHeaders.size() ); // dummy write, 8 bytes per static combo
 
-	const uint32 dupl = gsl::narrow<uint32>( duplicateCombos.size() );
+	const uint32_t dupl = gsl::narrow<uint32_t>( duplicateCombos.size() );
 	ShaderFile.write( reinterpret_cast<const char*>( &dupl ), sizeof( dupl ) );
 
 	// now, write out all duplicate header records
@@ -801,7 +800,7 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	// now, write out all static combos
 	for ( StaticComboRecord_t& SRec : StaticComboHeaders )
 	{
-		SRec.m_nFileOffset = gsl::narrow<uint32>( ShaderFile.tellp() );
+		SRec.m_nFileOffset = gsl::narrow<uint32_t>( ShaderFile.tellp() );
 		if ( SRec.m_nStaticComboID != 0xffffffff ) // sentinel key?
 		{
 			CStaticCombo* pStatic = pByteCodeArray->FindByKey( SRec.m_nStaticComboID );
@@ -811,7 +810,7 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 			if ( const auto& code = pStatic->Code() )
 				ShaderFile.write( reinterpret_cast<const char*>( code.GetData() ), code.GetLength() );
 
-			constexpr uint32 endMark = 0xffffffff; // end of dynamic combos
+			constexpr uint32_t endMark = 0xffffffff; // end of dynamic combos
 			ShaderFile.write( reinterpret_cast<const char*>( &endMark ), sizeof( endMark ) );
 		}
 	}
@@ -838,11 +837,9 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	}
 }
 
-static DWORD gFlags = 0;
-
 // Assemble a reply package to the master from the compiled bytecode
 // return the length of the package.
-static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEntry, uint64 nComboOfEntry, CUtlBuffer& pBuf )
+static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEntry, uint64_t nComboOfEntry, CUtlBuffer& pBuf )
 {
 	GLOBAL_DATA_MTX_LOCK();
 	CStaticCombo* pStComboRec             = StaticComboFromDict( pEntry->m_szName, nComboOfEntry );
@@ -862,15 +859,15 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 			CByteCodeBlock* pCode = combo.get();
 			// check if we have already output an identical combo
 			OutputDynamicCombo( nBytesWritten, ubDynamicComboBuffer, pBuf, pCode->m_nComboID,
-								gsl::narrow<uint32>( pCode->m_nCodeSize ), pCode->m_ByteCode.get() );
+								gsl::narrow<uint32_t>( pCode->m_nCodeSize ), pCode->m_ByteCode.get() );
 		}
 		FlushCombos( nBytesWritten, ubDynamicComboBuffer, pBuf );
 	}
 
 	// Time to limit amount of prints
 	static Clock::time_point s_fLastInfoTime;
-	static uint64 s_nLastEntry = nComboOfEntry;
-	static CUtlMovingAverage<uint64, 60> s_averageProcess;
+	static uint64_t s_nLastEntry = nComboOfEntry;
+	static CUtlMovingAverage<uint64_t, 60> s_averageProcess;
 	static const char* s_lastShader = pEntry->m_szName;
 	const Clock::time_point fCurTime = Clock::now();
 
@@ -906,16 +903,16 @@ public:
 		, m_iNextCommand( 0 ), m_iEndCommand( 0 )
 		, m_iLastFinished( 0 ), m_hCombo( nullptr ) {}
 
-	void RangeBegin( uint64 iFirstCommand, uint64 iEndCommand );
+	void RangeBegin( uint64_t iFirstCommand, uint64_t iEndCommand );
 	void RangeFinished();
 
 	void ExecuteCompileCommand( CfgProcessor::ComboHandle hCombo );
 	void ExecuteCompileCommandThreaded( CfgProcessor::ComboHandle hCombo );
 	void HandleCommandResponse( CfgProcessor::ComboHandle hCombo, CmdSink::IResponse* pResponse );
 
-	void Run( uint32 ov = 0 )
+	void Run( uint32_t ov = 0 )
 	{
-		uint32 i = ov ? ov : std::thread::hardware_concurrency();
+		uint32_t i = ov ? ov : std::thread::hardware_concurrency();
 		std::vector<std::thread> active;
 
 		while ( i-- > 0 )
@@ -959,27 +956,27 @@ protected:
 	{
 		size_t dwIndex;
 		DWORD dwSvcThreadId;
-		uint64 iRunningCommand;
+		uint64_t iRunningCommand;
 		SubProcessKernelObjects* pCommObjs;
 		std::future<int> pThread;
 	};
 	Threading::CThreadLocal<SubProcess*> m_lpSubProcessInfo;
 	std::vector<SubProcess*> m_arrSubProcessInfos;
-	uint64 m_iFirstCommand;
-	uint64 m_iNextCommand;
-	uint64 m_iEndCommand;
+	uint64_t m_iFirstCommand;
+	uint64_t m_iNextCommand;
+	uint64_t m_iEndCommand;
 
-	uint64 m_iLastFinished;
+	uint64_t m_iLastFinished;
 
 	CfgProcessor::ComboHandle m_hCombo;
 
 	bool OnProcess();
-	void TryToPackageData( uint64 iCommandNumber );
+	void TryToPackageData( uint64_t iCommandNumber );
 	void PrepareSubProcess( SubProcess** ppSp, SubProcessKernelObjects** ppCommObjs );
 };
 
 template <typename TMutexType>
-void CWorkerAccumState<TMutexType>::RangeBegin( uint64 iFirstCommand, uint64 iEndCommand )
+void CWorkerAccumState<TMutexType>::RangeBegin( uint64_t iFirstCommand, uint64_t iEndCommand )
 {
 	m_iFirstCommand = iFirstCommand;
 	m_iNextCommand  = iFirstCommand;
@@ -1011,8 +1008,6 @@ template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::QuitSubs()
 {
 	using namespace std::chrono_literals;
-	std::vector<HANDLE> m_arrWait;
-	m_arrWait.reserve( m_arrSubProcessInfos.size() );
 	std::vector<std::reference_wrapper<const std::future<int>>> m_arrWait2;
 	m_arrWait2.reserve( m_arrSubProcessInfos.size() );
 
@@ -1029,13 +1024,6 @@ void CWorkerAccumState<TMutexType>::QuitSubs()
 
 		if ( pSp->pThread.valid() )
 			m_arrWait2.emplace_back( pSp->pThread );
-	}
-
-	if ( !m_arrWait.empty() )
-	{
-		const DWORD dwWait = WaitForMultipleObjects( gsl::narrow<DWORD>( m_arrWait.size() ), m_arrWait.data(), TRUE, 2 * 1000 );
-		if ( WAIT_TIMEOUT == dwWait )
-			std::cout << clr::pinkish << "Timed out while waiting for sub-processes to shut down!" << clr::reset << std::endl;
 	}
 
 	if ( !m_arrWait2.empty() )
@@ -1171,14 +1159,14 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 
 	// Command info
 	const CfgProcessor::CfgEntryInfo* pEntryInfo = Combo_GetEntryInfo( hCombo );
-	const uint64 iComboIndex                     = Combo_GetComboNum( hCombo );
-	const uint64 iCommandNumber                  = Combo_GetCommandNum( hCombo );
+	const uint64_t iComboIndex                     = Combo_GetComboNum( hCombo );
+	const uint64_t iCommandNumber                  = Combo_GetCommandNum( hCombo );
 
 	if ( pResponse->Succeeded() )
 	{
 		GLOBAL_DATA_MTX_LOCK();
-		const uint64 nStComboIdx = iComboIndex / pEntryInfo->m_numDynamicCombos;
-		const uint64 nDyComboIdx = iComboIndex - ( nStComboIdx * pEntryInfo->m_numDynamicCombos );
+		const uint64_t nStComboIdx = iComboIndex / pEntryInfo->m_numDynamicCombos;
+		const uint64_t nDyComboIdx = iComboIndex - ( nStComboIdx * pEntryInfo->m_numDynamicCombos );
 		StaticComboFromDictAdd( pEntryInfo->m_szName, nStComboIdx )->AddDynamicCombo( nDyComboIdx, pResponse->GetResultBuffer(), pResponse->GetResultBufferLen() );
 		GLOBAL_DATA_MTX_UNLOCK();
 	}
@@ -1215,13 +1203,13 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 }
 
 template <typename TMutexType>
-void CWorkerAccumState<TMutexType>::TryToPackageData( uint64 iCommandNumber )
+void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 {
 	if ( m_bBreak )
 		return;
 	m_pMutex->Lock();
 
-	uint64 iFinishedByNow = iCommandNumber + 1;
+	uint64_t iFinishedByNow = iCommandNumber + 1;
 
 	// Check if somebody is running an earlier command
 	for ( SubProcess* pSp : m_arrSubProcessInfos )
@@ -1233,7 +1221,7 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64 iCommandNumber )
 		}
 	}
 
-	const uint64 iLastFinished = m_iLastFinished;
+	const uint64_t iLastFinished = m_iLastFinished;
 	if ( iFinishedByNow > m_iLastFinished )
 	{
 		m_iLastFinished = iFinishedByNow;
@@ -1253,8 +1241,8 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64 iCommandNumber )
 	const CfgProcessor::CfgEntryInfo* pInfoBegin = Combo_GetEntryInfo( hChBegin );
 	const CfgProcessor::CfgEntryInfo* pInfoEnd   = Combo_GetEntryInfo( hChEnd );
 
-	uint64 nComboBegin     = Combo_GetComboNum( hChBegin ) / pInfoBegin->m_numDynamicCombos;
-	const uint64 nComboEnd = Combo_GetComboNum( hChEnd ) / pInfoEnd->m_numDynamicCombos;
+	uint64_t nComboBegin     = Combo_GetComboNum( hChBegin ) / pInfoBegin->m_numDynamicCombos;
+	const uint64_t nComboEnd = Combo_GetComboNum( hChEnd ) / pInfoEnd->m_numDynamicCombos;
 
 	for ( ; pInfoBegin && ( pInfoBegin->m_iCommandStart < pInfoEnd->m_iCommandStart || nComboBegin > nComboEnd ); )
 	{
@@ -1266,7 +1254,7 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64 iCommandNumber )
 		{
 			// Packed buffer
 			GLOBAL_DATA_MTX_LOCK();
-			uint8* pCodeBuffer = StaticComboFromDictAdd( pInfoBegin->m_szName, nComboBegin )->AllocPackedCodeBlock( nPackedLength );
+			uint8_t* pCodeBuffer = StaticComboFromDictAdd( pInfoBegin->m_szName, nComboBegin )->AllocPackedCodeBlock( nPackedLength );
 			GLOBAL_DATA_MTX_UNLOCK();
 
 			if ( pCodeBuffer )
@@ -1299,7 +1287,7 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 	CfgProcessor::ComboHandle hThreadCombo = m_hCombo ? Combo_Alloc( m_hCombo ) : nullptr;
 	m_pMutex->Unlock();
 
-	uint64 iThreadCommand = ~0ULL;
+	uint64_t iThreadCommand = ~0ULL;
 
 	SubProcess* pSp = nullptr;
 	PrepareSubProcess( &pSp, nullptr );
@@ -1369,7 +1357,7 @@ public:
 	}
 
 public:
-	void ProcessCommandRange( uint64 shaderStart, uint64 shaderEnd );
+	void ProcessCommandRange( uint64_t shaderStart, uint64_t shaderEnd );
 
 	void Stop();
 	bool Stoped() const { return m_bStopped; }
@@ -1443,7 +1431,7 @@ void ProcessCommandRange_Singleton::Stop()
 }
 
 
-void ProcessCommandRange_Singleton::ProcessCommandRange( uint64 shaderStart, uint64 shaderEnd )
+void ProcessCommandRange_Singleton::ProcessCommandRange( uint64_t shaderStart, uint64_t shaderEnd )
 {
 	if ( m_MT.pWorkerObj )
 	{
@@ -1585,8 +1573,10 @@ static void CompileShaders()
 	std::cout << "\r                                                                                           \r";
 }
 
-static bool WriteMiniDumpUsingExceptionInfo( _EXCEPTION_POINTERS* pExceptionInfo, MINIDUMP_TYPE minidumpType )
+static LONG WINAPI ExceptionFilter( _EXCEPTION_POINTERS* pExceptionInfo )
 {
+	constexpr const auto iType = static_cast<MINIDUMP_TYPE>( MiniDumpNormal | MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory | MiniDumpWithThreadInfo );
+
 	// create a unique filename for the minidump based on the current time and module name
 	time_t currTime = time( nullptr );
 	struct tm pTime;
@@ -1608,30 +1598,30 @@ static bool WriteMiniDumpUsingExceptionInfo( _EXCEPTION_POINTERS* pExceptionInfo
 	// can't use the normal string functions since we're in tier0
 	char rgchFileName[MAX_PATH];
 	_snprintf_s( rgchFileName, ARRAYSIZE( rgchFileName ),
-				 "%s_%s_%d%.2d%2d%.2d%.2d%.2d_%d.mdmp",
-				 pch,
-				 "crash",
-				 pTime.tm_year + 1900, /* Year less 2000 */
-				 pTime.tm_mon + 1,     /* month (0 - 11 : 0 = January) */
-				 pTime.tm_mday,        /* day of month (1 - 31) */
-				 pTime.tm_hour,        /* hour (0 - 23) */
-				 pTime.tm_min,         /* minutes (0 - 59) */
-				 pTime.tm_sec,         /* seconds (0 - 59) */
-				 0                     // ensures the filename is unique
-	);
+		"%s_%s_%d%.2d%2d%.2d%.2d%.2d_%d.mdmp",
+		pch,
+		"crash",
+		pTime.tm_year + 1900, /* Year less 2000 */
+		pTime.tm_mon + 1,     /* month (0 - 11 : 0 = January) */
+		pTime.tm_mday,        /* day of month (1 - 31) */
+		pTime.tm_hour,        /* hour (0 - 23) */
+		pTime.tm_min,         /* minutes (0 - 59) */
+		pTime.tm_sec,         /* seconds (0 - 59) */
+		0                     // ensures the filename is unique
+		);
 
 	BOOL bMinidumpResult = FALSE;
-	const HANDLE hFile   = ::CreateFile( rgchFileName, GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr );
+	const HANDLE hFile = ::CreateFile( rgchFileName, GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr );
 
 	if ( hFile )
 	{
 		// dump the exception information into the file
 		_MINIDUMP_EXCEPTION_INFORMATION ExInfo;
-		ExInfo.ThreadId          = GetCurrentThreadId();
+		ExInfo.ThreadId = GetCurrentThreadId();
 		ExInfo.ExceptionPointers = pExceptionInfo;
-		ExInfo.ClientPointers    = FALSE;
+		ExInfo.ClientPointers = FALSE;
 
-		bMinidumpResult = MiniDumpWriteDump( ::GetCurrentProcess(), ::GetCurrentProcessId(), hFile, minidumpType, &ExInfo, nullptr, nullptr );
+		bMinidumpResult = MiniDumpWriteDump( ::GetCurrentProcess(), ::GetCurrentProcessId(), hFile, iType, &ExInfo, nullptr, nullptr );
 		CloseHandle( hFile );
 	}
 
@@ -1643,15 +1633,6 @@ static bool WriteMiniDumpUsingExceptionInfo( _EXCEPTION_POINTERS* pExceptionInfo
 		rename( rgchFileName, rgchFailedFileName );
 	}
 
-	return bMinidumpResult;
-}
-
-static LONG __stdcall ToolsExceptionFilter( struct _EXCEPTION_POINTERS* ExceptionInfo )
-{
-	// Non VMPI workers write a minidump and show a crash dialog like normal.
-	constexpr const int iType = MiniDumpNormal | MiniDumpWithDataSegs | MiniDumpWithIndirectlyReferencedMemory | MiniDumpWithThreadInfo;
-
-	WriteMiniDumpUsingExceptionInfo( ExceptionInfo, static_cast<MINIDUMP_TYPE>( iType ) );
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 
@@ -1679,9 +1660,8 @@ static void PrintCompileErrors()
 			return s;
 		};
 
-		char cwd[_MAX_PATH];
-		_getcwd( cwd, sizeof( cwd ) );
-		const size_t cwdLen = strlen( cwd ) + 1;
+		auto cwd = fs::current_path().string();
+		const size_t cwdLen = cwd.length() + 1;
 
 		for ( int i = 0; i < numShaderMsgs; i++ )
 		{
@@ -1897,7 +1877,7 @@ int main( int argc, const char* argv[] )
 	g_bVerbose2 = cmdLine.isSet( "-verbose2" );
 
 	// Setting up the minidump handlers
-	SetUnhandledExceptionFilter( ToolsExceptionFilter );
+	SetUnhandledExceptionFilter( ExceptionFilter );
 	Shared_ParseListOfCompileCommands();
 
 	std::cout << "\rCompiling " << clr::green << PrettyPrint( g_numCompileCommands ) << clr::reset << " commands in " << clr::green << PrettyPrint( g_numStaticCombos ) << clr::reset << " static combos.                      \r";

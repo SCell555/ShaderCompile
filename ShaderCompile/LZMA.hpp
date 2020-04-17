@@ -7,10 +7,10 @@ namespace LZMA
 #pragma pack( 1 )
 	struct lzma_header_t
 	{
-		uint32 id;
-		uint32 actualSize; // always little endian
-		uint32 lzmaSize;   // always little endian
-		uint8 properties[5];
+		uint32_t	id;
+		uint32_t	actualSize; // always little endian
+		uint32_t	lzmaSize;   // always little endian
+		uint8_t		properties[5];
 	};
 #pragma pack()
 	static_assert( sizeof( lzma_header_t ) == 17 );
@@ -25,7 +25,7 @@ namespace LZMA
 	}
 	static ISzAlloc g_Alloc = { SzAlloc, SzFree };
 
-	static uint8* Compress( uint8* pInput, size_t inputSize, size_t* pOutputSize )
+	static uint8_t* Compress( uint8_t* pInput, size_t inputSize, size_t* pOutputSize )
 	{
 		Byte* inBuffer = pInput;
 		CLzmaEncProps props;
@@ -39,7 +39,7 @@ namespace LZMA
 
 		lzma_header_t* header = reinterpret_cast<lzma_header_t*>( outBuffer );
 		header->id = LZMA_ID;
-		header->actualSize = gsl::narrow<uint32>( inputSize );
+		header->actualSize = gsl::narrow<uint32_t>( inputSize );
 
 		{
 			size_t outSizeProcessed = outSize - sizeof( lzma_header_t );
@@ -55,7 +55,7 @@ namespace LZMA
 				return nullptr;
 			}
 
-			header->lzmaSize = gsl::narrow<uint32>( outSizeProcessed );
+			header->lzmaSize = gsl::narrow<uint32_t>( outSizeProcessed );
 			outSize = sizeof( lzma_header_t ) + outSizeProcessed;
 		}
 		*pOutputSize = outSize;

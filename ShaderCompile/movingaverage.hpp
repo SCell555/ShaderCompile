@@ -2,7 +2,7 @@
 #define MOVINGAVERAGE_HPP
 
 
-template <typename StorageType, uint32 TBufferSize>
+template <typename StorageType, uint32_t TBufferSize>
 class CUtlMovingAverage
 {
 public:
@@ -24,15 +24,15 @@ public:
 
 	[[nodiscard]] StorageType GetAverage() const
 	{
-		const uint32 n = Min( TBufferSize, m_nIndex );
+		const uint32_t n = std::min( TBufferSize, m_nIndex );
 		return gsl::narrow_cast<StorageType>( n ? ( m_total / static_cast<double>( n ) ) : 0 );
 	}
 
 	void PushValue( StorageType v )
 	{
-		uint32 nIndex = m_nValuesPushed % TBufferSize;
+		uint32_t nIndex = m_nValuesPushed % TBufferSize;
 		m_nValuesPushed = nIndex + 1;
-		m_nIndex = Max( m_nIndex, m_nValuesPushed );
+		m_nIndex = std::max( m_nIndex, m_nValuesPushed );
 
 		m_total -= m_buffer[nIndex];
 		m_total += v;
@@ -42,8 +42,8 @@ public:
 
 private:
 	StorageType m_buffer[TBufferSize];
-	uint32 m_nValuesPushed;
-	uint32 m_nIndex;
+	uint32_t m_nValuesPushed;
+	uint32_t m_nIndex;
 
 	StorageType m_total;
 };

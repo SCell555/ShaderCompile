@@ -41,15 +41,15 @@ void ReadConfiguration( const char* configFile );
 
 struct CfgEntryInfo
 {
-	const char* m_szName;			// Name of the shader, e.g. "shader_ps20b"
-	const char* m_szShaderFileName;	// Name of the src file, e.g. "shader_psxx.fxc"
-	const char* m_szShaderVersion;	// Version of shader
-	uint64 m_numCombos;				// Total possible num of combos, e.g. 1024
-	uint64 m_numDynamicCombos;		// Num of dynamic combos, e.g. 4
-	uint64 m_numStaticCombos;		// Num of static combos, e.g. 256
-	uint64 m_iCommandStart;			// Start command, e.g. 0
-	uint64 m_iCommandEnd;			// End command, e.g. 1024
-	int    m_nCentroidMask;			// Mask of centroid samplers
+	const char*	m_szName;			// Name of the shader, e.g. "shader_ps20b"
+	const char*	m_szShaderFileName;	// Name of the src file, e.g. "shader_psxx.fxc"
+	const char*	m_szShaderVersion;	// Version of shader
+	uint64_t	m_numCombos;				// Total possible num of combos, e.g. 1024
+	uint64_t	m_numDynamicCombos;		// Num of dynamic combos, e.g. 4
+	uint64_t	m_numStaticCombos;		// Num of static combos, e.g. 256
+	uint64_t	m_iCommandStart;			// Start command, e.g. 0
+	uint64_t	m_iCommandEnd;			// End command, e.g. 1024
+	int			m_nCentroidMask;			// Mask of centroid samplers
 };
 
 void DescribeConfiguration( std::unique_ptr<CfgEntryInfo[]>& rarrEntries );
@@ -61,12 +61,12 @@ struct __ComboHandle
 };
 using ComboHandle = __ComboHandle*;
 
-ComboHandle Combo_GetCombo( uint64 iCommandNumber );
-ComboHandle Combo_GetNext( uint64& riCommandNumber, ComboHandle& rhCombo, uint64 iCommandEnd );
+ComboHandle Combo_GetCombo( uint64_t iCommandNumber );
+ComboHandle Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint64_t iCommandEnd );
 void Combo_FormatCommand( ComboHandle hCombo, gsl::span<char> pchBuffer );
 void Combo_FormatCommandHumanReadable( ComboHandle hCombo, gsl::span<char> pchBuffer );
-uint64 Combo_GetCommandNum( ComboHandle hCombo );
-uint64 Combo_GetComboNum( ComboHandle hCombo );
+uint64_t Combo_GetCommandNum( ComboHandle hCombo );
+uint64_t Combo_GetComboNum( ComboHandle hCombo );
 CfgEntryInfo const* Combo_GetEntryInfo( ComboHandle hCombo );
 
 ComboHandle Combo_Alloc( ComboHandle hComboCopyFrom );
