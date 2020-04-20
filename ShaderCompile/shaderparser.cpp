@@ -83,7 +83,7 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 	{
 		if ( !cComment )
 		{
-			while ( re2::RE2::FullMatch( line, r::c_inline_comment, &c1, nullptr, &c2 ) )
+			while ( re2::RE2::FullMatch( line, r::c_inline_comment, &c1, &c2 ) )
 				line = c1 + c2;
 		}
 
