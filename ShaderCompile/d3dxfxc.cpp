@@ -78,21 +78,6 @@ namespace Private
 	};
 	static DxIncludeImpl s_incDxImpl;
 
-	static FORCEINLINE bool PATHSEPARATOR( char c )
-	{
-		return c == '\\' || c == '/';
-	}
-
-	static const char* V_UnqualifiedFileName( const char* in )
-	{
-		// back up until the character after the first path separator we find,
-		// or the beginning of the string
-		const char* out = in + strlen( in ) - 1;
-		while ( out > in && !PATHSEPARATOR( *( out - 1 ) ) )
-			out--;
-		return out;
-	}
-
 	//
 	// Response implementation
 	//
@@ -141,14 +126,12 @@ namespace Private
 		ID3DBlob* pShader        = nullptr; // NOTE: Must release the COM interface later
 		ID3DBlob* pErrorMessages = nullptr; // NOTE: Must release COM interface later
 
-		const LPCSTR fName = V_UnqualifiedFileName( pszFilename );
-
 		LPCVOID lpcvData = nullptr;
 		UINT numBytes    = 0;
 		HRESULT hr       = s_incDxImpl.Open( D3D_INCLUDE_LOCAL, pszFilename, nullptr, &lpcvData, &numBytes );
 		if ( !FAILED( hr ) )
 		{
-			hr = D3DCompile2( lpcvData, numBytes, fName, pMacros.data(), &s_incDxImpl, "main", pszModel, flags, 0, 0, nullptr, 0, &pShader, &pErrorMessages );
+			hr = D3DCompile( lpcvData, numBytes, pszFilename, pMacros.data(), &s_incDxImpl, "main", pszModel, flags, 0, &pShader, &pErrorMessages );
 
 			// Close the file
 			s_incDxImpl.Close( lpcvData );
