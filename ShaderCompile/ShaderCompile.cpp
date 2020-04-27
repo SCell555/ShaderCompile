@@ -483,11 +483,29 @@ static CSwitchableMutex<Private::g_mtxSyncObjMT> g_mtxGlobal;
 static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine, const char* szName )
 {
 	auto& msg = g_Master_CompilerMsg[szName];
+	char* dupMsg = strdup( szMsgLine );
+	char *start = dupMsg, *end = dupMsg + strlen( dupMsg );
+	char* start2 = start;
+
 	// Now store the message with the command it was generated from
-	if ( strstr( szMsgLine, "warning X" ) )
-		msg.warning[szMsgLine].SetMsgReportedCommand( szCommand );
-	else
-		msg.error[szMsgLine].SetMsgReportedCommand( szCommand );
+	for ( ; start2 < end && ( start = strchr( start2, '\n' ) ); start2 = start + 1 )
+	{
+		*start = 0;
+		if ( strstr( start2, "warning X" ) )
+			msg.warning[start2].SetMsgReportedCommand( szCommand );
+		else
+			msg.error[start2].SetMsgReportedCommand( szCommand );
+	}
+
+	if ( start2 < end )
+	{
+		if ( strstr( start2, "warning X" ) )
+			msg.warning[start2].SetMsgReportedCommand( szCommand );
+		else
+			msg.error[start2].SetMsgReportedCommand( szCommand );
+	}
+
+	free( dupMsg );
 }
 
 static void ShaderHadErrorDispatchInt( const char* szShader )
@@ -1184,7 +1202,7 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 		char chUnreportedListing[0xFF];
 		if ( !szListing )
 		{
-			sprintf_s( chUnreportedListing, "(%s): error 0000: Compiler failed without error description. Command number %llu", pEntryInfo->m_szShaderFileName, iCommandNumber );
+			sprintf_s( chUnreportedListing, "%s(0,0): error 0000: Compiler failed without error description. Command number %llu", pEntryInfo->m_szShaderFileName, iCommandNumber );
 			szListing = chUnreportedListing;
 		}
 
@@ -1660,13 +1678,14 @@ static void PrintCompileErrors()
 			return s;
 		};
 
-		auto cwd = fs::current_path().string();
-		const size_t cwdLen = cwd.length() + 1;
+		const size_t cwdLen = fs::current_path().string().length() + 1;
 
 		for ( int i = 0; i < numShaderMsgs; i++ )
 		{
 			const auto& msg              = g_Master_CompilerMsg[gsl::narrow<UtlSymId_t>( i )];
 			const char* const shaderName = g_Master_CompilerMsg.String( i );
+			const std::string searchPat  = *cmdLine.lastArgs[0] + "("; // TODO: rework when readding support for multiple files
+			const size_t nameLen         = searchPat.length();
 
 			if ( const int warnings = msg.warning.GetNumStrings() )
 				std::cout << shaderName << " " << clr::yellow << warnings << " WARNING(S):                                                         " << clr::reset << std::endl;
@@ -1677,9 +1696,11 @@ static void PrintCompileErrors()
 				const CompilerMsgInfo& cmi = msg.warning[gsl::narrow<UtlSymId_t>( k )];
 				const int numReported      = cmi.GetNumTimesReported();
 
-				std::string m     = trim( szMsg );
-				const size_t find = m.find( cwd );
-				std::cout << std::quoted( find != std::string::npos ? m.replace( find, cwdLen, "" ) : m ) << "\nReported " << clr::green << numReported << clr::reset << " time(s)" << std::endl;
+				std::string m = trim( szMsg );
+				size_t find;
+				if ( ( find = m.find( searchPat ) ) != std::string::npos && find > cwdLen )
+					m = m.replace( find - cwdLen, cwdLen, "" );
+				std::cout << m << "\nReported " << clr::green << numReported << clr::reset << " time(s)" << std::endl;
 			}
 
 			if ( const int errors = msg.error.GetNumStrings() )
@@ -1693,9 +1714,11 @@ static void PrintCompileErrors()
 				const std::string& cmd           = cmi.GetFirstCommand();
 				const int numReported            = cmi.GetNumTimesReported();
 
-				std::string m     = trim( szMsg );
-				const size_t find = m.find( cwd );
-				std::cout << std::quoted( find != std::string::npos ? m.replace( find, cwdLen, "" ) : m ) << "\nReported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
+				std::string m = trim( szMsg );
+				size_t find;
+				if ( ( find = m.find( searchPat ) ) != std::string::npos && find > cwdLen )
+					m = m.replace( find - cwdLen, cwdLen, "" );
+				std::cout << m << "\nReported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
 
 				std::cout << "    " << clr::green << cmd << " " << shaderName << ".fxc" << clr::reset << std::endl;
 			}
