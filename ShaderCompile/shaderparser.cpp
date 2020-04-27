@@ -37,7 +37,7 @@ namespace r
 	static const RE2 static_combo( R"reg(^\s*//\s*STATIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)")reg" );
 	static const RE2 dynamic_combo( R"reg(^\s*//\s*DYNAMIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)")reg" );
 	static const RE2 centroid( R"reg(^\s*//\s*CENTROID\s*:\s*TEXCOORD(\d+)\s*$)reg" );
-	static const RE2 version( R"reg(^(.*_[vp]s)(\d+\w?))reg" );
+	static const RE2 version( R"reg(^(.*_[vp]s)(\d\db|\d\d|\dx|xx))reg" );
 	static const RE2 c_comment_start( R"reg(^(.*)\/\*)reg");
 	static const RE2 c_comment_end( R"reg(\*\/(.*)$)reg");
 	static const RE2 c_inline_comment( R"reg(^(.*)\/\*.*?\*\/(.*))reg");
@@ -117,15 +117,16 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 	return !cComment;
 }
 
-bool Parser::ParseFile( const std::string& name, const std::string& version, std::vector<Combo>& static_c, std::vector<Combo>& dynamic_c,
+bool Parser::ParseFile( const std::string& name, const std::string& _version, std::vector<Combo>& static_c, std::vector<Combo>& dynamic_c,
 						std::vector<std::string>& skip, uint32_t& centroid_mask, std::vector<std::string>& includes )
 {
 	using re2::RE2;
 	centroid_mask = 0U;
 	const auto f = name.find_last_of( '.' );
-	const bool isPs = RE2::PartialMatch( f != std::string::npos ? name.substr( 0, f ) : name, RE2( R"reg(_ps(\d+\w?)$)reg"sv ) );
+	const bool isPs = RE2::PartialMatch( f != std::string::npos ? name.substr( 0, f ) : name, RE2( R"reg(_ps(\d\db|\d\d|\dx|xx)$)reg"sv ) );
 	const RE2 shouldMatch( isPs ? R"reg(\[ps(\d+\w?)\])reg"sv : R"reg(\[vs(\d+\w?)\])reg"sv );
 	const RE2 shouldNotMatch( isPs ? R"reg(\[vs\d+\w?\])reg"sv : R"reg(\[ps\d+\w?\])reg"sv );
+	const std::string version = !isPs && _version == "20b"sv ? "20" : _version;
 
 	const auto& trim = []( std::string s ) -> std::string
 	{
@@ -192,7 +193,7 @@ bool Parser::ParseFile( const std::string& name, const std::string& version, std
 void Parser::WriteInclude( const std::string& fileName, const std::string& name, const std::vector<Combo>& static_c,
 							const std::vector<Combo>& dynamic_c, const std::vector<std::string>& skip )
 {
-	const bool isVs = RE2::PartialMatch( name, RE2( R"reg(_vs(\d+\w?)$)reg"sv ) );
+	const bool isVs = RE2::PartialMatch( name, RE2( R"reg(_vs(\d\db|\d\d|\dx|xx)$)reg"sv ) );
 	if ( fs::exists( fileName ) )
 		fs::permissions( fileName, fs::perms::owner_read | fs::perms::owner_write );
 
