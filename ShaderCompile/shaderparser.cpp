@@ -34,9 +34,9 @@ namespace r
 	static const RE2 pc_reg( R"reg(\[PC\])reg" );
 	static const RE2 start( R"reg(^\s*//\s*(STATIC|DYNAMIC|SKIP|CENTROID)\s*:\s*(.*)$)reg" );
 	static const RE2 init( R"reg(\[\s*=\s*([^\]]+)\])reg" );
-	static const RE2 static_combo( R"reg(^\s*//\s*STATIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)")reg" );
-	static const RE2 dynamic_combo( R"reg(^\s*//\s*DYNAMIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)")reg" );
-	static const RE2 centroid( R"reg(^\s*//\s*CENTROID\s*:\s*TEXCOORD(\d+)\s*$)reg" );
+	static const RE2 static_combo( R"reg(^\s*//\s*STATIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)".*)reg" );
+	static const RE2 dynamic_combo( R"reg(^\s*//\s*DYNAMIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)".*)reg" );
+	static const RE2 centroid( R"reg(^\s*//\s*CENTROID\s*:\s*TEXCOORD(\d+).*$)reg" );
 	static const RE2 version( R"reg(^(.*_[vp]s)(\d\db|\d\d|\dx|xx))reg" );
 	static const RE2 c_comment_start( R"reg(^(.*)\/\*)reg");
 	static const RE2 c_comment_end( R"reg(\*\/(.*)$)reg");
