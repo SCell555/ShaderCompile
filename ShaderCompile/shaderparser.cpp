@@ -87,7 +87,7 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 				line = c1 + c2;
 		}
 
-		if ( !cComment && re2::RE2::FullMatch( line, r::c_comment_start, &c1 ) )
+		/*if ( !cComment && re2::RE2::FullMatch( line, r::c_comment_start, &c1 ) )
 		{
 			line = c1;
 			cComment = true;
@@ -98,14 +98,16 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 			cComment = false;
 		}
 		else if ( cComment )
-			continue;
+			continue;*/
 		re2::RE2::FullMatch( line, r::cpp_comment, &reducedLine );
 		if ( re2::RE2::PartialMatch( reducedLine.empty() ? line : reducedLine, r::inc, &incl ) )
 		{
+			reducedLine.clear();
 			if ( !ReadFile( parent / incl, includes, func ) )
 				return false;
 			continue;
 		}
+		reducedLine.clear();
 		func( line );
 	}
 
