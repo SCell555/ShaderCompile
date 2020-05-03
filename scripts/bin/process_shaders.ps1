@@ -2,8 +2,8 @@
 param (
     [Parameter(Mandatory=$true, ValueFromPipeline=$true)][System.IO.FileInfo]$File,
     [Parameter(Mandatory=$true)][string]$Version,
-    [Parameter(Mandatory=$false)][switch]$Dynamic
-    [Parameter(Mandatory=$false)][System::UInt32]$Threads
+    [Parameter(Mandatory=$false)][switch]$Dynamic,
+    [Parameter(Mandatory=$false)][System.UInt32]$Threads
 )
 
 if ($Version -notin @("20b", "30", "40", "41", "50", "51")) {
