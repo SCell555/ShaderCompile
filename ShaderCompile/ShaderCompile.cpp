@@ -1698,7 +1698,7 @@ static void PrintCompileErrors()
 
 				std::string m = trim( szMsg );
 				size_t find;
-				if ( ( find = m.find( searchPat ) ) != std::string::npos && find > cwdLen )
+				if ( ( find = m.find( searchPat ) ) != std::string::npos )
 					m = m.replace( find - cwdLen, cwdLen, "" );
 				std::cout << m << "\nReported " << clr::green << numReported << clr::reset << " time(s)" << std::endl;
 			}
@@ -1716,7 +1716,7 @@ static void PrintCompileErrors()
 
 				std::string m = trim( szMsg );
 				size_t find;
-				if ( ( find = m.find( searchPat ) ) != std::string::npos && find > cwdLen )
+				if ( ( find = m.find( searchPat ) ) != std::string::npos )
 					m = m.replace( find - cwdLen, cwdLen, "" );
 				std::cout << m << "\nReported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
 
