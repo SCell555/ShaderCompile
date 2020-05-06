@@ -12,6 +12,7 @@
 #include "cmdsink.h"
 #include "d3dcompiler.h"
 #include "gsl/span"
+#include "gsl/gsl_util"
 #include <malloc.h>
 #include <vector>
 

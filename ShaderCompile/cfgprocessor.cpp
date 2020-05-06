@@ -28,6 +28,7 @@
 #include <vector>
 #include <fstream>
 
+#include "gsl/gsl_util"
 #include "json/json.h"
 #include "termcolor/style.hpp"
 #include "termcolors.hpp"

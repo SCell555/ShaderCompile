@@ -11,7 +11,7 @@
 #include "basetypes.h"
 #include "cmdsink.h"
 #include "d3dxfxc.h"
-#include <gsl/gsl_util>
+#include "gsl/gsl_util"
 #include <string>
 #include <windows.h>
 
