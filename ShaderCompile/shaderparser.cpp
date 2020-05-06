@@ -205,7 +205,7 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 			file << "class "sv << name << "_"sv << suffix << "_Index\n{\n";
 			const bool hasIfdef = std::find_if( vars.begin(), vars.end(), []( const Combo& c ) { return c.initVal.empty(); } ) != vars.end();
 			for ( const Combo& c : vars )
-				file << "\tint m_n"sv << c.name << " : "sv << ( 32 - _lzcnt_u32( c.maxVal - c.minVal + 1 ) ) << ";\n"sv;
+				file << "\tint m_n"sv << c.name << " : "sv << ( 33 - _lzcnt_u32( c.maxVal - c.minVal + 1 ) ) << ";\n"sv;
 			if ( hasIfdef )
 				file << "#ifdef _DEBUG\n"sv;
 			for ( const Combo& c : vars )
