@@ -79,6 +79,7 @@ static Clock::time_point g_flStartTime;
 static DWORD gFlags		= 0;
 bool g_bVerbose			= false;
 static bool g_bVerbose2 = false;
+static bool g_bFastFail = false;
 
 struct ShaderInfo_t
 {
@@ -652,7 +653,7 @@ static bool CompareComboIds( const StaticComboAuxInfo_t& pA, const StaticComboAu
 	return pA.m_nStaticComboID < pB.m_nStaticComboID;
 }
 
-static void WriteShaderFiles( const char* pShaderName, bool end )
+static void WriteShaderFiles( const char* pShaderName )
 {
 	using namespace std;
 	if ( !g_Master_ShaderWrittenToDisk.Defined( pShaderName ) )
@@ -663,15 +664,15 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	const bool bShaderFailed                = g_Master_ShaderHadError.Defined( pShaderName );
 	const char* const szShaderFileOperation = bShaderFailed ? "Removing failed" : "Writing";
 
-	static int lastLine               = 0;
+	//static int lastLine               = 0;
 	static Clock::time_point lastTime = g_flStartTime;
-	++lastLine;
+	//++lastLine;
 
 	//
 	// Progress indication
 	//
-	if ( !end )
-		std::cout << ( "\033["s + std::to_string( lastLine ) + "B" );
+	/*if ( !end )
+		std::cout << ( "\033["s + std::to_string( lastLine ) + "B" );*/
 	std::cout << "\r" << szShaderFileOperation << " " << ( bShaderFailed ? clr::red : clr::green ) << pShaderName << clr::reset << "...\r";
 
 	//
@@ -713,7 +714,7 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	{
 		_unlink( szVCSfilename );
 		std::cout << "\r" << clr::red << pShaderName << clr::reset << " " << FormatTimeShort( std::chrono::duration_cast<std::chrono::seconds>( Clock::now() - lastTime ).count() ) << "                                        \r";
-		std::cout << ( "\033["s + std::to_string( lastLine ) + "A" );
+		//std::cout << ( "\033["s + std::to_string( lastLine ) + "A" );
 		lastTime = Clock::now();
 		return;
 	}
@@ -847,12 +848,9 @@ static void WriteShaderFiles( const char* pShaderName, bool end )
 	// Finalize, free memory
 	delete pByteCodeArray;
 
-	if ( !end )
-	{
-		std::cout << "\r" << clr::green << pShaderName << clr::reset << " " << FormatTimeShort( std::chrono::duration_cast<std::chrono::seconds>( Clock::now() - lastTime ).count() ) << "                                        \r";
-		std::cout << ( "\033["s + std::to_string( lastLine ) + "A" );
-		lastTime = Clock::now();
-	}
+	std::cout << "\r" << clr::green << pShaderName << clr::reset << " " << FormatTimeShort( std::chrono::duration_cast<std::chrono::seconds>( Clock::now() - lastTime ).count() ) << "                                        \r";
+	//std::cout << ( "\033["s + std::to_string( lastLine ) + "A" );
+	lastTime = Clock::now();
 }
 
 // Assemble a reply package to the master from the compiled bytecode
@@ -1170,6 +1168,8 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommand( CfgProcessor::ComboHa
 	HandleCommandResponse( hCombo, pResponse );
 }
 
+static void StopCommandRange();
+
 template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHandle hCombo, CmdSink::IResponse* pResponse )
 {
@@ -1211,6 +1211,8 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 
 		GLOBAL_DATA_MTX_LOCK();
 		ErrMsgDispatchMsgLine( chBuffer, szListing, pEntryInfo->m_szName );
+		if ( !pResponse->Succeeded() && g_bFastFail )
+			StopCommandRange();
 		GLOBAL_DATA_MTX_UNLOCK();
 	}
 
@@ -1415,6 +1417,12 @@ protected:
 	bool m_bStopped = false;
 };
 
+// TODO: Cleanup this hack
+static void StopCommandRange()
+{
+	ProcessCommandRange_Singleton::Instance()->Stop();
+}
+
 void ProcessCommandRange_Singleton::Startup()
 {
 	unsigned long threads;
@@ -1585,7 +1593,7 @@ static void CompileShaders()
 		// Now when the whole shader is finished we can write it
 		//
 		const char* szShaderToWrite = pEntry->m_szName;
-		WriteShaderFiles( szShaderToWrite, false );
+		WriteShaderFiles( szShaderToWrite );
 	}
 
 	std::cout << "\r                                                                                           \r";
@@ -1751,16 +1759,10 @@ static BOOL WINAPI CtrlHandler( DWORD signal )
 	return FALSE;
 }
 
-static void WriteShaders()
+static void WriteStats()
 {
-	// Write everything that succeeded
 	if ( s_write )
-	{
-		const int nStrings = g_ShaderByteCode.GetNumStrings();
-		for ( int i = 0; i < nStrings; i++ )
-			WriteShaderFiles( g_ShaderByteCode.String( i ), true );
 		PrintCompileErrors();
-	}
 
 	//
 	// End
@@ -1792,6 +1794,7 @@ int main( int argc, const char* argv[] )
 	cmdLine.add( "", false, 0, 0, "Skip crc check during compilation", "-force", "/force" );
 	cmdLine.add( "", false, 0, 0, "Calculate crc for shader", "-crc", "/crc" );
 	cmdLine.add( "", false, 0, 0, "Generate only header", "-dynamic", "/dynamic" );
+	cmdLine.add( "", false, 0, 0, "Stop on first error", "-fastfail", "/fastfail" );
 	cmdLine.add( "0", false, 1, 0, "Number of threads used, defaults to core count", "-threads", "/threads" );
 	cmdLine.add( "", false, 0, 0, "Shows help", "-help", "-h", "/help", "/h" );
 
@@ -1899,6 +1902,7 @@ int main( int argc, const char* argv[] )
 
 	g_bVerbose = cmdLine.isSet( "-verbose" );
 	g_bVerbose2 = cmdLine.isSet( "-verbose2" );
+	g_bFastFail = cmdLine.isSet( "-fastfail" );
 
 	// Setting up the minidump handlers
 	SetUnhandledExceptionFilter( ExceptionFilter );
@@ -1908,7 +1912,7 @@ int main( int argc, const char* argv[] )
 	std::cout << "\rCompiling " << clr::green << PrettyPrint( g_numCompileCommands ) << clr::reset << " commands in " << clr::green << PrettyPrint( g_numStaticCombos ) << clr::reset << " static combos.                      \r";
 	CompileShaders();
 
-	WriteShaders();
+	WriteStats();
 	SetThreadExecutionState( ES_CONTINUOUS );
 
 	return g_Master_ShaderHadError.GetNumStrings();
