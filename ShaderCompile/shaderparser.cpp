@@ -19,8 +19,6 @@
 #include "gsl/string_span"
 #include "CRC32.hpp"
 
-#include <intrin.h>
-
 #pragma comment(lib, "re2.lib")
 
 using namespace std::literals;
@@ -42,6 +40,21 @@ namespace r
 	static const RE2 c_comment_end( R"reg(\*\/(.*)$)reg");
 	static const RE2 c_inline_comment( R"reg(^(.*)\/\*.*?\*\/(.*))reg");
 	static const RE2 cpp_comment( R"reg(^(.*)\/\/$)reg");
+}
+
+static std::uint32_t lzcnt( std::uint32_t n )
+{
+    uint32_t r = 0;
+    if (n == 0)
+		return 32;
+
+    if (n <= 0x0000FFFF) { r += 16; n <<= 16; }
+    if (n <= 0x00FFFFFF) { r += 8;  n <<= 8; }
+    if (n <= 0x0FFFFFFF) { r += 4;  n <<= 4; }
+    if (n <= 0x3FFFFFFF) { r += 2;  n <<= 2; }
+    if (n <= 0x7FFFFFFF) { r += 1;  n <<= 1; }
+
+    return r;
 }
 
 Parser::Combo::Combo( const std::string& name, int32_t min, int32_t max, const std::string& init_val ) : name( name ), minVal( min ), maxVal( max ), initVal( init_val )
@@ -205,7 +218,7 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 			file << "class "sv << name << "_"sv << suffix << "_Index\n{\n";
 			const bool hasIfdef = std::find_if( vars.begin(), vars.end(), []( const Combo& c ) { return c.initVal.empty(); } ) != vars.end();
 			for ( const Combo& c : vars )
-				file << "\tint m_n"sv << c.name << " : "sv << ( 33 - _lzcnt_u32( c.maxVal - c.minVal + 1 ) ) << ";\n"sv;
+				file << "\tint m_n"sv << c.name << " : "sv << ( 33 - lzcnt( c.maxVal - c.minVal + 1 ) ) << ";\n"sv;
 			if ( hasIfdef )
 				file << "#ifdef _DEBUG\n"sv;
 			for ( const Combo& c : vars )
