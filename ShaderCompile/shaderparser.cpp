@@ -44,8 +44,8 @@ namespace r
 
 static std::uint32_t lzcnt( std::uint32_t n )
 {
-    uint32_t r = 0;
-    if (n == 0)
+    std::uint32_t r = 0;
+	if ( n == 0 )
 		return 32;
 
     if (n <= 0x0000FFFF) { r += 16; n <<= 16; }
@@ -218,7 +218,7 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 			file << "class "sv << name << "_"sv << suffix << "_Index\n{\n";
 			const bool hasIfdef = std::find_if( vars.begin(), vars.end(), []( const Combo& c ) { return c.initVal.empty(); } ) != vars.end();
 			for ( const Combo& c : vars )
-				file << "\tint m_n"sv << c.name << " : "sv << ( 33 - lzcnt( c.maxVal - c.minVal + 1 ) ) << ";\n"sv;
+				file << "\tunsigned int m_n"sv << c.name << " : "sv << ( 32 - lzcnt( c.maxVal - c.minVal + 1 ) ) << ";\n"sv;
 			if ( hasIfdef )
 				file << "#ifdef _DEBUG\n"sv;
 			for ( const Combo& c : vars )
@@ -231,7 +231,10 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 			{
 				file << "\tvoid Set"sv << c.name << "( int i )\n\t{\n"sv;
 				file << "\t\tAssert( i >= "sv << c.minVal << " && i <= "sv << c.maxVal << " );\n"sv;
-				file << "\t\tm_n"sv << c.name << " = i;\n"sv;
+				if ( c.minVal == 0 )
+					file << "\t\tm_n"sv << c.name << " = i;\n"sv;
+				else
+					file << "\t\tm_n"sv << c.name << " = i - "sv << c.minVal << ";\n"sv;
 				if ( c.initVal.empty() )
 					file << "#ifdef _DEBUG\n\t\tm_b"sv << c.name << " = true;\n#endif\t// _DEBUG\n"sv;
 				file << "\t}\n\n"sv;
