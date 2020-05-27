@@ -219,9 +219,9 @@ public:
 using StaticComboNodeHash_t = CUtlNodeHash<CStaticCombo, 7097, uint64_t>;
 
 template <typename... Args>
-inline void Construct( StaticComboNodeHash_t** pMemory, const Args&... )
+inline StaticComboNodeHash_t** Construct( StaticComboNodeHash_t** pMemory, const Args&... )
 {
-	::new ( pMemory ) StaticComboNodeHash_t*( nullptr ); // Explicitly new with NULL
+	return ::new ( pMemory ) StaticComboNodeHash_t*( nullptr ); // Explicitly new with NULL
 }
 
 using CShaderMap = CUtlStringMap<StaticComboNodeHash_t*>;
@@ -565,7 +565,7 @@ static void FlushCombos( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamicComboBu
 		return;
 
 	size_t nCompressedSize;
-	uint8_t* pCompressedShader = LZMA::Compress( reinterpret_cast<uint8_t*>( pDynamicComboBuffer.Base() ), pDynamicComboBuffer.TellPut(), &nCompressedSize );
+	uint8_t* pCompressedShader = LZMA::OpportunisticCompress( reinterpret_cast<uint8_t*>( pDynamicComboBuffer.Base() ), pDynamicComboBuffer.TellPut(), &nCompressedSize );
 	// high 2 bits of length =
 	// 00 = bzip2 compressed
 	// 10 = uncompressed
@@ -889,7 +889,11 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 
 	GLOBAL_DATA_MTX_LOCK();
 	if ( pStComboRec )
+	{
+		CStaticCombo *pCombo = pByteCodeArray->FindByKey( nComboOfEntry );
 		pByteCodeArray->DeleteByKey( nComboOfEntry );
+		delete pCombo;
+	}
 	if ( std::chrono::duration_cast<std::chrono::seconds>( fCurTime - s_fLastInfoTime ).count() != 0 )
 	{
 		if ( s_lastShader != pEntry->m_szName )

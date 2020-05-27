@@ -184,6 +184,19 @@ namespace LZMA
 
 		return pOutputBuffer;
 	}
+
+	uint8_t* OpportunisticCompress( uint8_t* pInput, size_t inputSize, size_t* pOutputSize )
+	{
+		uint8_t* pRet = Compress( pInput, inputSize, pOutputSize );
+		if ( *pOutputSize <= inputSize )
+		{
+			// compression got worse or stayed the same
+			delete[] pRet;
+			return nullptr;
+		}
+
+		return pRet;
+	}
 } // namespace LZMA
 
 #endif // LZMA_HPP
