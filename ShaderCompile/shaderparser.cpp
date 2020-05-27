@@ -190,7 +190,7 @@ bool Parser::ParseFile( const std::string& name, const std::string& _version, st
 		{
 			uint32_t v;
 			RE2::FullMatch( trim( line ), r::centroid, &v );
-			centroid_mask |= v;
+			centroid_mask |= 1 << v;
 		}
 		else
 		{
