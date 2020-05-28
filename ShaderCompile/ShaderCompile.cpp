@@ -19,7 +19,9 @@
 
 #include "DbgHelp.h"
 #include "d3dcompiler.h"
+#include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <future>
 #include <iomanip>
 #include <regex>
@@ -122,11 +124,6 @@ struct CByteCodeBlock
 	}
 };
 
-static bool CompareDynamicComboIDs( const std::unique_ptr<CByteCodeBlock>& pA, const std::unique_ptr<CByteCodeBlock>& pB )
-{
-	return pA->m_nComboID < pB->m_nComboID;
-}
-
 struct CStaticCombo // all the data for one static combo
 {
 	struct PackedCode : protected std::unique_ptr<uint8_t[]>
@@ -163,6 +160,11 @@ private:
 	std::vector<std::unique_ptr<CByteCodeBlock>> m_DynamicCombos;
 
 	PackedCode m_abPackedCode; // Packed code for entire static combo
+
+	static bool CompareDynamicComboIDs( const std::unique_ptr<CByteCodeBlock>& pA, const std::unique_ptr<CByteCodeBlock>& pB )
+	{
+		return pA->m_nComboID < pB->m_nComboID;
+	}
 
 public:
 	[[nodiscard]] __forceinline uint64_t Key() const
@@ -282,127 +284,11 @@ static CUtlStringMap<CompilerMsg> g_Master_CompilerMsg;
 
 namespace Threading
 {
-class CSTDMutex : public std::mutex
+class null_mutex
 {
 public:
-	using std::mutex::mutex;
-
-	FORCEINLINE void Lock()
-	{
-		lock();
-	}
-
-	FORCEINLINE void Unlock()
-	{
-		unlock();
-	}
-};
-
-class CThreadNullMutex
-{
-public:
-	static void Lock() {}
-	static void Unlock() {}
-};
-
-template <typename T>
-class CInterlockedPtr
-{
-#ifdef _M_AMD64
-	using cast_type = volatile unsigned long long*;
-#else
-	using cast_type = volatile unsigned long*;
-#endif
-public:
-	CInterlockedPtr() : m_value( nullptr ) {}
-	CInterlockedPtr( T* value ) : m_value( value ) {}
-
-	operator T*() const { return m_value; }
-
-	bool operator!() const { return ( m_value == nullptr ); }
-	bool operator==( T* rhs ) const { return ( m_value == rhs ); }
-	bool operator!=( T* rhs ) const { return ( m_value != rhs ); }
-
-	T* operator++() { return reinterpret_cast<T*>( InterlockedExchangeAdd( reinterpret_cast<cast_type>( &m_value ), sizeof( T ) ) ) + 1; }
-	T* operator++( int ) { return reinterpret_cast<T*>( InterlockedExchangeAdd( reinterpret_cast<cast_type>( &m_value ), sizeof( T ) ) ); }
-
-	T* operator--() { return reinterpret_cast<T*>( InterlockedExchangeAdd( reinterpret_cast<cast_type>( &m_value ), -sizeof( T ) ) ) - 1; }
-	T* operator--( int ) { return reinterpret_cast<T*>( InterlockedExchangeAdd( reinterpret_cast<cast_type>( &m_value ), -sizeof( T ) ) ); }
-
-	bool AssignIf( T* conditionValue, T* newValue ) { return InterlockedCompareExchangePointer( reinterpret_cast<void* volatile*>( &m_value ), newValue, conditionValue ) == conditionValue; }
-
-	T* operator=( T* newValue )
-	{
-		InterlockedExchangePointer( reinterpret_cast<void* volatile*>( &m_value ), newValue );
-		return newValue;
-	}
-
-	void operator+=( int add ) { InterlockedExchangeAdd( reinterpret_cast<cast_type>( &m_value ), add * sizeof( T ) ); }
-	void operator-=( int subtract ) { operator+=( -subtract ); }
-
-	T* operator+( int rhs ) const { return m_value + rhs; }
-	T* operator-( int rhs ) const { return m_value - rhs; }
-	T* operator+( unsigned rhs ) const { return m_value + rhs; }
-	T* operator-( unsigned rhs ) const { return m_value - rhs; }
-	size_t operator-( T* p ) const { return m_value - p; }
-	intptr_t operator-( const CInterlockedPtr<T>& p ) const { return m_value - p.m_value; }
-
-private:
-	T* volatile m_value;
-};
-
-class CInterlockedInt
-{
-public:
-	CInterlockedInt() : m_value( 0 ) {}
-	CInterlockedInt( int value ) : m_value( value ) {}
-
-	operator int() const { return m_value; }
-
-	bool operator!() const { return ( m_value == 0 ); }
-	bool operator==( int rhs ) const { return ( m_value == rhs ); }
-	bool operator!=( int rhs ) const { return ( m_value != rhs ); }
-
-	int operator++() { return InterlockedIncrement( &m_value ); }
-	int operator++( int ) { return operator++() - 1; }
-
-	int operator--() { return InterlockedDecrement( &m_value ); }
-	int operator--( int ) { return operator--() + 1; }
-
-	bool AssignIf( int conditionValue, int newValue ) { return InterlockedCompareExchange( &m_value, newValue, conditionValue ) == conditionValue; }
-
-	int operator=( int newValue )
-	{
-		InterlockedExchange( &m_value, newValue );
-		return m_value;
-	}
-
-	void operator+=( int add ) { InterlockedExchangeAdd( &m_value, add ); }
-	void operator-=( int subtract ) { operator+=( -subtract ); }
-	void operator*=( int multiplier )
-	{
-		int original, result;
-		do
-		{
-			original = m_value;
-			result   = original * multiplier;
-		} while ( !AssignIf( original, result ) );
-	}
-	void operator/=( int divisor )
-	{
-		int original, result;
-		do
-		{
-			original = m_value;
-			result   = original / divisor;
-		} while ( !AssignIf( original, result ) );
-	}
-
-	int operator+( int rhs ) const { return m_value + rhs; }
-	int operator-( int rhs ) const { return m_value - rhs; }
-
-private:
-	volatile long m_value;
+	void lock() {}
+	void unlock() {}
 };
 
 template <class T>
@@ -455,23 +341,22 @@ public:
 	FORCEINLINE void Lock()
 	{
 		if ( mtx_type* pUseMtx = m_pUseMtx )
-			pUseMtx->Lock();
+			pUseMtx->lock();
 	}
 
 	FORCEINLINE void Unlock()
 	{
 		if ( mtx_type* pUseMtx = m_pUseMtx )
-			pUseMtx->Unlock();
+			pUseMtx->unlock();
 	}
 
 private:
-	CInterlockedPtr<mtx_type> m_pUseMtx;
+	std::atomic<mtx_type*> m_pUseMtx;
 };
 
 namespace Private
 {
-	using MtMutexType_t = CSTDMutex;
-	static MtMutexType_t g_mtxSyncObjMT;
+	static std::mutex g_mtxSyncObjMT;
 }; // namespace Private
 
 static CSwitchableMutex<Private::g_mtxSyncObjMT> g_mtxGlobal;
@@ -736,7 +621,7 @@ static void WriteShaderFiles( const char* pShaderName )
 
 	StaticComboHeaders.reserve( 1ULL + pByteCodeArray->Count() ); // we know how much ram we need
 
-	std::vector<int> comboIndicesHashedByCRC32[STATIC_COMBO_HASH_SIZE];
+	std::vector<size_t> comboIndicesHashedByCRC32[STATIC_COMBO_HASH_SIZE];
 	std::vector<StaticComboAliasRecord_t> duplicateCombos;
 
 	// now, lets fill in our combo headers, sort, and write
@@ -753,9 +638,11 @@ static void WriteShaderFiles( const char* pShaderName )
 				hdr.m_nCRC32          = CRC32::ProcessSingleBuffer( code.GetData(), code.GetLength() );
 				const uint32_t nHashIdx = hdr.m_nCRC32 % STATIC_COMBO_HASH_SIZE;
 				hdr.m_pByteCode       = pStatic;
+
 				// now, see if we have an identical static combo
+				auto& hash = comboIndicesHashedByCRC32[nHashIdx];
 				bool bIsDuplicate = false;
-				for ( int i : comboIndicesHashedByCRC32[nHashIdx] )
+				for ( size_t i : hash )
 				{
 					const StaticComboAuxInfo_t& check = StaticComboHeaders[i];
 					const CStaticCombo::PackedCode& checkCode = check.m_pByteCode->Code();
@@ -771,7 +658,7 @@ static void WriteShaderFiles( const char* pShaderName )
 				if ( !bIsDuplicate )
 				{
 					StaticComboHeaders.emplace_back( hdr );
-					comboIndicesHashedByCRC32[nHashIdx].emplace_back( gsl::narrow<int>( StaticComboHeaders.size() - 1 ) );
+					hash.emplace_back( StaticComboHeaders.size() - 1 );
 				}
 			}
 		}
@@ -959,8 +846,8 @@ public:
 	}
 
 protected:
-	Threading::CInterlockedInt m_bBreak;
-	Threading::CInterlockedInt m_nActive;
+	std::atomic<bool> m_bBreak;
+	std::atomic<int> m_nActive;
 	TMutexType* m_pMutex;
 
 	static void DoExecute( CWorkerAccumState* pThis )
@@ -1101,10 +988,10 @@ void CWorkerAccumState<TMutexType>::PrepareSubProcess( SubProcess** ppSp, SubPro
 
 		pSp->pThread = std::async( std::launch::async, ShaderCompile_Subprocess_Main, std::string( chBaseNameBuffer ), gFlags );
 
-		m_pMutex->Lock();
+		m_pMutex->lock();
 		pSp->dwIndex = m_arrSubProcessInfos.size();
 		m_arrSubProcessInfos.emplace_back( pSp );
-		m_pMutex->Unlock();
+		m_pMutex->unlock();
 	}
 
 	if ( ppSp )
@@ -1161,12 +1048,15 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommand( CfgProcessor::ComboHa
 {
 	CmdSink::IResponse* pResponse = nullptr;
 
+	if ( g_bVerbose2 )
+	{
+		char chReadBuf[4096];
+		Combo_FormatCommandHumanReadable( hCombo, chReadBuf );
+		std::cout << "running: \"" << clr::green << chReadBuf << clr::reset << "\"" << std::endl;
+	}
+
 	char chBuffer[4096];
 	Combo_FormatCommand( hCombo, chBuffer );
-
-	if ( g_bVerbose2 )
-		std::cout << "running: \"" << clr::green << chBuffer << clr::reset << "\"" << std::endl;
-
 	InterceptFxc::TryExecuteCommand( chBuffer, &pResponse, gFlags );
 
 	HandleCommandResponse( hCombo, pResponse );
@@ -1231,7 +1121,7 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 {
 	if ( m_bBreak )
 		return;
-	m_pMutex->Lock();
+	m_pMutex->lock();
 
 	uint64_t iFinishedByNow = iCommandNumber + 1;
 
@@ -1249,11 +1139,11 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 	if ( iFinishedByNow > m_iLastFinished )
 	{
 		m_iLastFinished = iFinishedByNow;
-		m_pMutex->Unlock();
+		m_pMutex->unlock();
 	}
 	else
 	{
-		m_pMutex->Unlock();
+		m_pMutex->unlock();
 		return;
 	}
 
@@ -1307,9 +1197,9 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 template <typename TMutexType>
 bool CWorkerAccumState<TMutexType>::OnProcess()
 {
-	m_pMutex->Lock();
+	m_pMutex->lock();
 	CfgProcessor::ComboHandle hThreadCombo = m_hCombo ? Combo_Alloc( m_hCombo ) : nullptr;
-	m_pMutex->Unlock();
+	m_pMutex->unlock();
 
 	uint64_t iThreadCommand = ~0ULL;
 
@@ -1318,7 +1208,7 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 
 	for ( ;; )
 	{
-		m_pMutex->Lock();
+		m_pMutex->lock();
 		if ( m_hCombo )
 		{
 			Combo_Assign( hThreadCombo, m_hCombo );
@@ -1331,7 +1221,7 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 			iThreadCommand       = ~0ULL;
 			pSp->iRunningCommand = ~0ULL;
 		}
-		m_pMutex->Unlock();
+		m_pMutex->unlock();
 
 		if ( hThreadCombo && !m_bBreak )
 			ExecuteCompileCommandThreaded( hThreadCombo );
@@ -1397,10 +1287,9 @@ protected:
 	{
 		MT() : pWorkerObj( nullptr ) {}
 
-		using MultiThreadMutex_t = Threading::CSTDMutex;
-		MultiThreadMutex_t mtx;
+		std::mutex mtx;
 
-		using WorkerClass_t = CWorkerAccumState<MultiThreadMutex_t>;
+		using WorkerClass_t = CWorkerAccumState<std::mutex>;
 		WorkerClass_t* pWorkerObj;
 	} m_MT;
 
@@ -1411,10 +1300,9 @@ protected:
 	{
 		ST() : pWorkerObj( nullptr ) {}
 
-		using SingleThreadMutex_t = Threading::CThreadNullMutex;
-		SingleThreadMutex_t mtx;
+		Threading::null_mutex mtx;
 
-		using WorkerClass_t = CWorkerAccumState<SingleThreadMutex_t>;
+		using WorkerClass_t = CWorkerAccumState<Threading::null_mutex>;
 		WorkerClass_t* pWorkerObj;
 	} m_ST;
 
