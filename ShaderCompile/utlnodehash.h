@@ -33,8 +33,7 @@ public:
 
 	[[nodiscard]] T* FindByKey( K nMatchKey, int* pChainNumber = nullptr )
 	{
-		nMatchKey %= HASHSIZE;
-		const unsigned int nChain = static_cast<unsigned int>( nMatchKey );
+		const unsigned int nChain = static_cast<unsigned int>( nMatchKey % HASHSIZE );
 		if ( pChainNumber )
 			*pChainNumber = nChain;
 		for ( T* pNode = m_HashChains[nChain].Head(); pNode; pNode = pNode->Next() )
