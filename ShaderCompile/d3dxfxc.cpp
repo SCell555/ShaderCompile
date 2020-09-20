@@ -11,8 +11,8 @@
 #include "basetypes.h"
 #include "cmdsink.h"
 #include "d3dcompiler.h"
-#include "gsl/span"
-#include "gsl/gsl_util"
+#include "gsl/gsl_narrow"
+#include <span>
 #include <malloc.h>
 #include <vector>
 
@@ -122,7 +122,7 @@ namespace Private
 	// @param pMacros			null-terminated array of macro-defines
 	// @param pszModel			shader model for compilation
 	//
-	void FastShaderCompile( const char* pszFilename, gsl::span<const D3D_SHADER_MACRO> pMacros, const char* pszModel, CmdSink::IResponse** ppResponse, DWORD flags )
+	void FastShaderCompile( const char* pszFilename, std::span<const D3D_SHADER_MACRO> pMacros, const char* pszModel, CmdSink::IResponse** ppResponse, DWORD flags )
 	{
 		ID3DBlob* pShader        = nullptr; // NOTE: Must release the COM interface later
 		ID3DBlob* pErrorMessages = nullptr; // NOTE: Must release COM interface later

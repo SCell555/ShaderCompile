@@ -15,7 +15,7 @@
 #include "basetypes.h"
 #include "cmdsink.h"
 
-#include "flat_map.hpp"
+#include "robin_hood.h"
 
 class CSharedFile final : private std::vector<char>
 {
@@ -41,7 +41,7 @@ public:
 	void Clear();
 
 protected:
-	typedef chobo::flat_map<std::string, CSharedFile> Mapping;
+	typedef robin_hood::unordered_node_map<std::string, CSharedFile> Mapping;
 	Mapping m_map;
 };
 

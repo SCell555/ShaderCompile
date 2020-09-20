@@ -8,13 +8,14 @@
 
 #include "utlbuffer.h"
 
-#include "gsl/gsl"
 #include <cctype>
 #include <climits>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <exception>
+#include "gsl/gsl_narrow"
 
 //-----------------------------------------------------------------------------
 // Character conversions for C strings

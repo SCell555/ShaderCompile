@@ -28,7 +28,7 @@
 #include <vector>
 #include <fstream>
 
-#include "gsl/gsl_util"
+#include "gsl/gsl_narrow"
 #include "json/json.h"
 #include "termcolor/style.hpp"
 #include "termcolors.hpp"
@@ -687,8 +687,8 @@ public:
 	bool AdvanceCommands( uint64_t& riAdvanceMore );
 	bool NextNotSkipped( uint64_t iTotalCommand );
 	bool IsSkipped() { return m_pEntry->m_pExpr->Evaluate( this ) != 0; }
-	void FormatCommand( gsl::span<char> pchBuffer );
-	void FormatCommandHumanReadable( gsl::span<char> pchBuffer );
+	void FormatCommand( std::span<char> pchBuffer );
+	void FormatCommandHumanReadable( std::span<char> pchBuffer );
 };
 
 static std::map<uint64_t, ComboHandleImpl> s_mapComboCommands;
@@ -786,7 +786,7 @@ bool ComboHandleImpl::NextNotSkipped( uint64_t iTotalCommand )
 	}
 }
 
-void ComboHandleImpl::FormatCommand( gsl::span<char> pchBuffer )
+void ComboHandleImpl::FormatCommand( std::span<char> pchBuffer )
 {
 	// Get the pointers
 	const int* const pnValues    = m_arrVarSlots.data();
@@ -825,7 +825,7 @@ void ComboHandleImpl::FormatCommand( gsl::span<char> pchBuffer )
 	}
 }
 
-void ComboHandleImpl::FormatCommandHumanReadable( gsl::span<char> pchBuffer )
+void ComboHandleImpl::FormatCommandHumanReadable( std::span<char> pchBuffer )
 {
 	// Get the pointers
 	const int* const pnValues    = m_arrVarSlots.data();
@@ -839,18 +839,17 @@ void ComboHandleImpl::FormatCommandHumanReadable( gsl::span<char> pchBuffer )
 
 	{
 		// ------- OnCombo( nCurrentCombo ); ----------
-		int o = sprintf_s( pchBuffer.data(), pchBuffer.size(), "fxc.exe /DCENTROIDMASK=%d ", m_pEntry->m_eiInfo.m_nCentroidMask );
-
 		char version[20];
 		strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion );
 		_strupr_s( version );
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "/DSHADERCOMBO=%llx /DSHADER_MODEL_%s=1 /T%s /Emain ",
-			m_iComboNumber, version, m_pEntry->m_eiInfo.m_szShaderVersion );
+		int o = sprintf_s( pchBuffer.data(), pchBuffer.size(),
+			"fxc.exe /DCENTROIDMASK=%d /DSHADERCOMBO=%llx /DSHADER_MODEL_%s=1 /T%s /Emain",
+			m_pEntry->m_eiInfo.m_nCentroidMask, m_iComboNumber, version, m_pEntry->m_eiInfo.m_szShaderVersion );
 
 		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd && pDefVars < pDefVarsEnd; ++pSetValues, ++pSetDef )
-			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "/D%s=%d ", pSetDef->Name(), *pSetValues );
+			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, " /D%s=%d", pSetDef->Name(), *pSetValues );
 
-		sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", m_pEntry->m_szShaderSrc );
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, " %s", m_pEntry->m_szShaderSrc );
 		// ------- end of OnCombo ---------------------
 
 		pchBuffer[o] = '\0';
@@ -1305,13 +1304,13 @@ ComboHandle Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint
 	}
 }
 
-void Combo_FormatCommand( ComboHandle hCombo, gsl::span<char> pchBuffer )
+void Combo_FormatCommand( ComboHandle hCombo, std::span<char> pchBuffer )
 {
 	CPCHI_t* pImpl = FromHandle( hCombo );
 	pImpl->FormatCommand( pchBuffer );
 }
 
-void Combo_FormatCommandHumanReadable( ComboHandle hCombo, gsl::span<char> pchBuffer )
+void Combo_FormatCommandHumanReadable( ComboHandle hCombo, std::span<char> pchBuffer )
 {
 	CPCHI_t* pImpl = FromHandle( hCombo );
 	pImpl->FormatCommandHumanReadable( pchBuffer );

@@ -13,7 +13,7 @@
 #endif
 
 #include "basetypes.h"
-#include "gsl/span"
+#include <span>
 #include <memory>
 
 /*
@@ -63,8 +63,8 @@ using ComboHandle = __ComboHandle*;
 
 ComboHandle Combo_GetCombo( uint64_t iCommandNumber );
 ComboHandle Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint64_t iCommandEnd );
-void Combo_FormatCommand( ComboHandle hCombo, gsl::span<char> pchBuffer );
-void Combo_FormatCommandHumanReadable( ComboHandle hCombo, gsl::span<char> pchBuffer );
+void Combo_FormatCommand( ComboHandle hCombo, std::span<char> pchBuffer );
+void Combo_FormatCommandHumanReadable( ComboHandle hCombo, std::span<char> pchBuffer );
 uint64_t Combo_GetCommandNum( ComboHandle hCombo );
 uint64_t Combo_GetComboNum( ComboHandle hCombo );
 CfgEntryInfo const* Combo_GetEntryInfo( ComboHandle hCombo );

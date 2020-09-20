@@ -10,7 +10,7 @@
 
 #include "utlsymbol.h"
 
-#include "gsl/gsl_util"
+#include "gsl/gsl_narrow"
 
 static constexpr CUtlSymbolTable::CStringPoolIndex INVALID_STRING_INDEX( 0xFFFF, 0xFFFF );
 

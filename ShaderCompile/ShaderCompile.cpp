@@ -36,11 +36,11 @@
 #include "subprocess.h"
 #include "utlbuffer.h"
 #include "utlnodehash.h"
-#include "utlstringmap.h"
 
 #include "ezOptionParser.hpp"
 #include "termcolor/style.hpp"
-#include "gsl/string_span"
+#include "gsl/gsl_narrow"
+#include "robin_hood.h"
 
 #include "CRC32.hpp"
 #include "movingaverage.hpp"
@@ -97,7 +97,7 @@ struct ShaderInfo_t
 	unsigned m_Flags; // from IShader.h
 	char m_szShaderModel[12];
 };
-static CUtlStringMap<ShaderInfo_t> g_ShaderToShaderInfo;
+static robin_hood::unordered_node_map<std::string, ShaderInfo_t> g_ShaderToShaderInfo;
 
 static void Shader_ParseShaderInfoFromCompileCommands( const CfgProcessor::CfgEntryInfo* pEntry, ShaderInfo_t& shaderInfo );
 
@@ -226,7 +226,7 @@ inline StaticComboNodeHash_t** Construct( StaticComboNodeHash_t** pMemory, const
 	return ::new ( pMemory ) StaticComboNodeHash_t*( nullptr ); // Explicitly new with NULL
 }
 
-using CShaderMap = CUtlStringMap<StaticComboNodeHash_t*>;
+using CShaderMap = robin_hood::unordered_map<std::string, StaticComboNodeHash_t*>;
 static CShaderMap g_ShaderByteCode;
 
 static CStaticCombo* StaticComboFromDictAdd( const char* pszShaderName, uint64_t nStaticComboId )
@@ -258,7 +258,7 @@ class CompilerMsgInfo
 public:
 	CompilerMsgInfo() : m_numTimesReported( 0 ) {}
 
-	void SetMsgReportedCommand( const char* szCommand, int numTimesReported = 1 )
+	void SetMsgReportedCommand( const std::string& szCommand, int numTimesReported = 1 )
 	{
 		if ( !m_numTimesReported )
 			m_sFirstCommand = szCommand;
@@ -273,14 +273,14 @@ protected:
 	int m_numTimesReported;
 };
 
-static CUtlStringMap<uint8_t> g_Master_ShaderHadError;
-static CUtlStringMap<uint8_t> g_Master_ShaderWrittenToDisk;
+static robin_hood::unordered_flat_set<std::string> g_ShaderHadError;
+static robin_hood::unordered_flat_set<std::string> g_ShaderWrittenToDisk;
 struct CompilerMsg
 {
-	CUtlStringMap<CompilerMsgInfo> warning;
-	CUtlStringMap<CompilerMsgInfo> error;
+	robin_hood::unordered_node_map<std::string, CompilerMsgInfo> warning;
+	robin_hood::unordered_node_map<std::string, CompilerMsgInfo> error;
 };
-static CUtlStringMap<CompilerMsg> g_Master_CompilerMsg;
+static robin_hood::unordered_node_map<std::string, CompilerMsg> g_CompilerMsg;
 
 namespace Threading
 {
@@ -357,18 +357,21 @@ private:
 namespace Private
 {
 	static std::mutex g_mtxSyncObjMT;
+	static std::mutex g_mtxSyncObjMT2;
 }; // namespace Private
 
 static CSwitchableMutex<Private::g_mtxSyncObjMT> g_mtxGlobal;
+static CSwitchableMutex<Private::g_mtxSyncObjMT2> g_mtxMsgReport;
 }; // namespace Threading
 
 // Access to global data should be synchronized by these global locks
 #define GLOBAL_DATA_MTX_LOCK()   Threading::g_mtxGlobal.Lock()
 #define GLOBAL_DATA_MTX_UNLOCK() Threading::g_mtxGlobal.Unlock()
 
-static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine, const char* szName )
+/*static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine, const char* szName )
 {
-	auto& msg = g_Master_CompilerMsg[szName];
+	Threading::g_mtxMsgReport.Lock();
+	auto& msg = g_CompilerMsg[szName];
 	char* dupMsg = strdup( szMsgLine );
 	char *start = dupMsg, *end = dupMsg + strlen( dupMsg );
 	char* start2 = start;
@@ -390,13 +393,40 @@ static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine,
 		else
 			msg.error[start2].SetMsgReportedCommand( szCommand );
 	}
-
 	free( dupMsg );
+	Threading::g_mtxMsgReport.Unlock();
+}*/
+static void ErrMsgDispatchMsgLine( std::string szCommand, std::string szMsgLine, std::string szName )
+{
+	Threading::g_mtxMsgReport.Lock();
+	auto& msg = g_CompilerMsg[szName];
+	char* dupMsg = szMsgLine.data();
+	char *start = dupMsg, *end = dupMsg + szMsgLine.size();
+	char* start2 = start;
+
+	// Now store the message with the command it was generated from
+	for ( ; start2 < end && ( start = strchr( start2, '\n' ) ); start2 = start + 1 )
+	{
+		*start = 0;
+		if ( strstr( start2, "warning X" ) )
+			msg.warning[start2].SetMsgReportedCommand( szCommand );
+		else
+			msg.error[start2].SetMsgReportedCommand( szCommand );
+	}
+
+	if ( start2 < end )
+	{
+		if ( strstr( start2, "warning X" ) )
+			msg.warning[start2].SetMsgReportedCommand( szCommand );
+		else
+			msg.error[start2].SetMsgReportedCommand( szCommand );
+	}
+	Threading::g_mtxMsgReport.Unlock();
 }
 
 static void ShaderHadErrorDispatchInt( const char* szShader )
 {
-	g_Master_ShaderHadError[szShader] = true;
+	g_ShaderHadError.emplace( szShader );
 }
 
 // new format:
@@ -486,7 +516,7 @@ static void OutputDynamicCombo( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamic
 	pDynamicComboBuffer.Put( pComboCode, nComboSize );
 }
 
-static void GetVCSFilenames( gsl::span<char> pszMainOutFileName, const ShaderInfo_t& si )
+static void GetVCSFilenames( std::span<char> pszMainOutFileName, const ShaderInfo_t& si )
 {
 	sprintf_s( pszMainOutFileName.data(), pszMainOutFileName.size(), "%s\\shaders\\fxc", g_pShaderPath.c_str() );
 
@@ -541,12 +571,10 @@ static bool CompareComboIds( const StaticComboAuxInfo_t& pA, const StaticComboAu
 static void WriteShaderFiles( const char* pShaderName )
 {
 	using namespace std;
-	if ( !g_Master_ShaderWrittenToDisk.Defined( pShaderName ) )
-		g_Master_ShaderWrittenToDisk[pShaderName] = true;
-	else
+	if ( !g_ShaderWrittenToDisk.emplace( pShaderName ).second )
 		return;
 
-	const bool bShaderFailed                = g_Master_ShaderHadError.Defined( pShaderName );
+	const bool bShaderFailed                = g_ShaderHadError.contains( pShaderName );
 	const char* const szShaderFileOperation = bShaderFailed ? "Removing failed" : "Writing";
 
 	//static int lastLine               = 0;
@@ -792,7 +820,7 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 
 		s_averageProcess.PushValue( s_nLastEntry - nComboOfEntry );
 		s_nLastEntry = nComboOfEntry;
-		std::cout << "\rCompiling " << ( g_Master_ShaderHadError.Defined( pEntry->m_szName ) ? clr::red : clr::green ) << pEntry->m_szName << clr::reset << " [ " << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining ("
+		std::cout << "\rCompiling " << ( g_ShaderHadError.contains( pEntry->m_szName ) ? clr::red : clr::green ) << pEntry->m_szName << clr::reset << " [ " << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining ("
 				  << clr::green2 << s_averageProcess.GetAverage() << clr::reset << " c/m) ] " << FormatTimeShort( std::chrono::duration_cast<std::chrono::seconds>( fCurTime - g_flStartTime ).count() ) << " elapsed         \r";
 		s_fLastInfoTime = fCurTime;
 	}
@@ -986,7 +1014,7 @@ void CWorkerAccumState<TMutexType>::PrepareSubProcess( SubProcess** ppSp, SubPro
 		sprintf_s( chBaseNameBuffer, "SHCMPL_SUB_%08lX_%08llX_%08lX", pSp->dwSvcThreadId, time( nullptr ), GetCurrentProcessId() );
 		pCommObjs = pSp->pCommObjs = new SubProcessKernelObjects_Create( chBaseNameBuffer );
 
-		pSp->pThread = std::async( std::launch::async, ShaderCompile_Subprocess_Main, std::string( chBaseNameBuffer ), gFlags );
+		pSp->pThread = std::move( std::async( std::launch::async, ShaderCompile_Subprocess_Main, std::string( chBaseNameBuffer ), gFlags ) );
 
 		m_pMutex->lock();
 		pSp->dwIndex = m_arrSubProcessInfos.size();
@@ -1013,7 +1041,8 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommandThreaded( CfgProcessor:
 		void* pvMemory = shrmem.Lock();
 		Assert( pvMemory );
 
-		Combo_FormatCommand( hCombo, gsl::make_span( static_cast<char*>( pvMemory ), 4 * 1024 * 1024 - 2 * sizeof( DWORD ) ) );
+		constexpr size_t memSize = 4 * 1024 * 1024 - 2 * sizeof( DWORD );
+		Combo_FormatCommand( hCombo, std::span<char, memSize>( static_cast<char*>( pvMemory ), memSize ) );
 
 		shrmem.Unlock();
 	}
@@ -1022,14 +1051,6 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommandThreaded( CfgProcessor:
 	{
 		const void* pvMemory = shrmem.Lock();
 		Assert( pvMemory );
-
-		// TODO: Vitaliy :: TEMP fix:
-		// Usually what happens if we fail to lock here is
-		// when our subprocess dies and to recover we will
-		// attempt to restart on another worker.
-		if ( !pvMemory )
-			// ::RaiseException( GetLastError(), EXCEPTION_NONCONTINUABLE, 0, NULL );
-			TerminateProcess( GetCurrentProcess(), 1 );
 
 		CmdSink::IResponse* pResponse;
 		if ( pvMemory )
@@ -1103,11 +1124,10 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 		char chBuffer[4096];
 		Combo_FormatCommandHumanReadable( hCombo, chBuffer );
 
-		GLOBAL_DATA_MTX_LOCK();
-		ErrMsgDispatchMsgLine( chBuffer, szListing, pEntryInfo->m_szName );
+		//ErrMsgDispatchMsgLine( chBuffer, szListing, pEntryInfo->m_szName );
+		std::async( std::launch::async, ErrMsgDispatchMsgLine, std::string( chBuffer ), std::string( szListing ), std::string( pEntryInfo->m_szName ) );
 		if ( !pResponse->Succeeded() && g_bFastFail )
 			StopCommandRange();
-		GLOBAL_DATA_MTX_UNLOCK();
 	}
 
 	pResponse->Release();
@@ -1323,6 +1343,7 @@ void ProcessCommandRange_Singleton::Startup()
 	{
 		// Make sure that our mutex is in multi-threaded mode
 		Threading::g_mtxGlobal.SetThreadedMode( Threading::eMultiThreaded );
+		Threading::g_mtxMsgReport.SetThreadedMode( Threading::eMultiThreaded );
 
 		m_MT.pWorkerObj = new MT::WorkerClass_t( &m_MT.mtx );
 	}
@@ -1563,37 +1584,38 @@ static void PrintCompileErrors()
 	//
 	//////////////////////////////////////////////////////////////////////////
 
-	if ( const int numShaderMsgs = g_Master_CompilerMsg.GetNumStrings() )
+	if ( !g_CompilerMsg.empty() )
 	{
-		int totalWarnings = 0, totalErrors = 0;
-		g_Master_CompilerMsg.ForEach( [&totalWarnings, &totalErrors]( const CompilerMsg& msg ) {
-			totalWarnings += msg.warning.GetNumStrings();
-			totalErrors += msg.error.GetNumStrings();
-		} );
+		size_t totalWarnings = 0, totalErrors = 0;
+		for ( const auto& msg : g_CompilerMsg )
+		{
+			totalWarnings += msg.second.warning.size();
+			totalErrors += msg.second.error.size();
+		}
 		std::cout << clr::yellow << "WARNINGS" << clr::reset << "/" << clr::red << "ERRORS " << clr::reset << totalWarnings << "/" << totalErrors << std::endl;
 
-		const auto& trim = []( const char* str ) -> std::string {
-			std::string s( str );
+		const auto& trim = []( std::string s ) -> std::string
+		{
 			s.erase( std::find_if( s.rbegin(), s.rend(), []( int ch ) { return !std::isspace( ch ); } ).base(), s.end() );
 			return s;
 		};
 
 		const size_t cwdLen = fs::current_path().string().length() + 1;
 
-		for ( int i = 0; i < numShaderMsgs; i++ )
+		for ( const auto& sMsg : g_CompilerMsg )
 		{
-			const auto& msg              = g_Master_CompilerMsg[gsl::narrow<UtlSymId_t>( i )];
-			const char* const shaderName = g_Master_CompilerMsg.String( i );
-			const std::string searchPat  = *cmdLine.lastArgs[0] + "("; // TODO: rework when readding support for multiple files
-			const size_t nameLen         = searchPat.length();
+			const auto& msg             = sMsg.second;
+			const auto& shaderName      = sMsg.first;
+			const std::string searchPat = *cmdLine.lastArgs[0] + "("; // TODO: rework when readding support for multiple files
+			const size_t nameLen        = searchPat.length();
 
-			if ( const int warnings = msg.warning.GetNumStrings() )
+			if ( const size_t warnings = msg.warning.size() )
 				std::cout << shaderName << " " << clr::yellow << warnings << " WARNING(S):                                                         " << clr::reset << std::endl;
 
-			for ( int k = 0, kEnd = msg.warning.GetNumStrings(); k < kEnd; ++k )
+			for ( const auto& warn : msg.warning )
 			{
-				const char* const szMsg    = msg.warning.String( k );
-				const CompilerMsgInfo& cmi = msg.warning[gsl::narrow<UtlSymId_t>( k )];
+				const auto& szMsg          = warn.first;
+				const CompilerMsgInfo& cmi = warn.second;
 				const int numReported      = cmi.GetNumTimesReported();
 
 				std::string m = trim( szMsg );
@@ -1603,16 +1625,16 @@ static void PrintCompileErrors()
 				std::cout << m << "\nReported " << clr::green << numReported << clr::reset << " time(s)" << std::endl;
 			}
 
-			if ( const int errors = msg.error.GetNumStrings() )
+			if ( const size_t errors = msg.error.size() )
 				std::cout << shaderName << " " << clr::red << errors << " ERROR(S):                                                               " << clr::reset << std::endl;
 
 			// Compiler spew
-			for ( int k = 0, kEnd = msg.error.GetNumStrings(); k < kEnd; ++k )
+			for ( const auto& err : msg.error )
 			{
-				const char* const szMsg          = msg.error.String( k );
-				const CompilerMsgInfo& cmi       = msg.error[gsl::narrow<UtlSymId_t>( k )];
-				const std::string& cmd           = cmi.GetFirstCommand();
-				const int numReported            = cmi.GetNumTimesReported();
+				const auto& szMsg          = err.first;
+				const CompilerMsgInfo& cmi = err.second;
+				const std::string& cmd     = cmi.GetFirstCommand();
+				const int numReported      = cmi.GetNumTimesReported();
 
 				std::string m = trim( szMsg );
 				size_t find;
@@ -1620,20 +1642,14 @@ static void PrintCompileErrors()
 					m = m.replace( find - cwdLen, cwdLen, "" );
 				std::cout << m << "\nReported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
 
-				std::cout << "    " << clr::green << cmd << " " << shaderName << ".fxc" << clr::reset << std::endl;
+				std::cout << "    " << clr::green << cmd << clr::reset << std::endl;
 			}
 		}
 	}
 
 	// Failed shaders summary
-	for ( int k = 0, kEnd = g_Master_ShaderHadError.GetNumStrings(); k < kEnd; ++k )
-	{
-		const char* szShaderName = g_Master_ShaderHadError.String( k );
-		if ( !g_Master_ShaderHadError[gsl::narrow<UtlSymId_t>( k )] )
-			continue;
-
-		std::cout << clr::pinkish << "FAILED: " << clr::red << szShaderName << clr::reset << std::endl;
-	}
+	for ( const auto& failed : g_ShaderHadError )
+		std::cout << clr::pinkish << "FAILED: " << clr::red << failed << clr::reset << std::endl;
 }
 
 static bool s_write = true;
@@ -1807,5 +1823,5 @@ int main( int argc, const char* argv[] )
 	WriteStats();
 	SetThreadExecutionState( ES_CONTINUOUS );
 
-	return g_Master_ShaderHadError.GetNumStrings();
+	return gsl::narrow_cast<int>( g_ShaderHadError.size() );
 }

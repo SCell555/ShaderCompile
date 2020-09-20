@@ -16,7 +16,7 @@
 #include "termcolor/style.hpp"
 #include "termcolors.hpp"
 #include "re2/re2.h"
-#include "gsl/string_span"
+#include "gsl/gsl_narrow"
 #include "CRC32.hpp"
 
 #pragma comment(lib, "re2.lib")
@@ -113,7 +113,7 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 		else if ( cComment )
 			continue;*/
 		re2::RE2::FullMatch( line, r::cpp_comment, &reducedLine );
-		if ( re2::RE2::PartialMatch( reducedLine.empty() ? line : reducedLine, r::inc, &incl ) && ( reducedLine.empty() ? line : reducedLine ).rfind( "//"sv, 0 ) != 0 )
+		if ( re2::RE2::PartialMatch( reducedLine.empty() ? line : reducedLine, r::inc, &incl ) && !( reducedLine.empty() ? line : reducedLine ).starts_with( "//"sv ) )
 		{
 			reducedLine.clear();
 			if ( !ReadFile( parent / incl, includes, func ) )
