@@ -44,17 +44,17 @@ namespace r
 
 static std::uint32_t lzcnt( std::uint32_t n )
 {
-    std::uint32_t r = 0;
+	std::uint32_t r = 0;
 	if ( n == 0 )
 		return 32;
 
-    if (n <= 0x0000FFFF) { r += 16; n <<= 16; }
-    if (n <= 0x00FFFFFF) { r += 8;  n <<= 8; }
-    if (n <= 0x0FFFFFFF) { r += 4;  n <<= 4; }
-    if (n <= 0x3FFFFFFF) { r += 2;  n <<= 2; }
-    if (n <= 0x7FFFFFFF) { r += 1;  n <<= 1; }
+	if (n <= 0x0000FFFF) { r += 16; n <<= 16; }
+	if (n <= 0x00FFFFFF) { r += 8;  n <<= 8; }
+	if (n <= 0x0FFFFFFF) { r += 4;  n <<= 4; }
+	if (n <= 0x3FFFFFFF) { r += 2;  n <<= 2; }
+	if (n <= 0x7FFFFFFF) { r += 1;  n <<= 1; }
 
-    return r;
+	return r;
 }
 
 Parser::Combo::Combo( const std::string& name, int32_t min, int32_t max, const std::string& init_val ) : name( name ), minVal( min ), maxVal( max ), initVal( init_val )
@@ -113,7 +113,7 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 		else if ( cComment )
 			continue;*/
 		re2::RE2::FullMatch( line, r::cpp_comment, &reducedLine );
-		if ( re2::RE2::PartialMatch( reducedLine.empty() ? line : reducedLine, r::inc, &incl ) )
+		if ( re2::RE2::PartialMatch( reducedLine.empty() ? line : reducedLine, r::inc, &incl ) && ( reducedLine.empty() ? line : reducedLine ).rfind( "//"sv, 0 ) != 0 )
 		{
 			reducedLine.clear();
 			if ( !ReadFile( parent / incl, includes, func ) )
@@ -154,7 +154,7 @@ bool Parser::ParseFile( const std::string& name, const std::string& _version, st
 		RE2::GlobalReplace( &line, shouldMatch, {} );
 		RE2::Replace( &line, r::pc_reg, {} );
 		RE2::Replace( &line, r::init, {} );
-		RE2::FullMatch( trim( line ), regex, &name, &min, &max );
+		RE2::FullMatch( trim( std::move( line ) ), regex, &name, &min, &max );
 		out.emplace_back( name, min, max, init );
 	};
 
@@ -188,7 +188,7 @@ bool Parser::ParseFile( const std::string& name, const std::string& _version, st
 			combo( r::dynamic_combo, line, init, dynamic_c );
 		else if ( name == "CENTROID"sv )
 		{
-			uint32_t v;
+			uint32_t v = 0;
 			RE2::FullMatch( trim( line ), r::centroid, &v );
 			centroid_mask |= 1 << v;
 		}
@@ -196,7 +196,7 @@ bool Parser::ParseFile( const std::string& name, const std::string& _version, st
 		{
 			RE2::GlobalReplace( &value, shouldMatch, {} );
 			RE2::Replace( &value, r::pc_reg, {} );
-			skip.emplace_back( trim( value ) );
+			skip.emplace_back( trim( std::move( value ) ) );
 		}
 	};
 
