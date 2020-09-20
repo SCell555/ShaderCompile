@@ -191,10 +191,6 @@
       </ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="shaderparser.cpp" />
-    <ClCompile Include="subprocess.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-      </ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="utlbuffer.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
       </ExcludedFromBuild>
@@ -235,10 +231,6 @@
       </ExcludedFromBuild>
     </ClInclude>
     <ClInclude Include="strmanip.hpp" />
-    <ClInclude Include="subprocess.h">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-      </ExcludedFromBuild>
-    </ClInclude>
     <ClInclude Include="termcolors.hpp" />
     <ClInclude Include="utlbuffer.h">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">

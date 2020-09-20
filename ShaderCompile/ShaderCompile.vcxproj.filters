@@ -24,9 +24,6 @@
     <ClCompile Include="d3dxfxc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="subprocess.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="utlbuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -52,9 +49,6 @@
     </ClInclude>
     <ClInclude Include="d3dxfxc.h">
       <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="subprocess.h">
-      <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="shadercompile.h">
       <Filter>Source Files</Filter>

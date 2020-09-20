@@ -23,17 +23,16 @@
 #include <chrono>
 #include <cstdlib>
 #include <future>
+#include <filesystem>
 #include <iomanip>
 #include <regex>
 #include <thread>
-#include <filesystem>
 
 #include "basetypes.h"
 #include "cfgprocessor.h"
 #include "cmdsink.h"
 #include "d3dxfxc.h"
 #include "shader_vcs_version.h"
-#include "subprocess.h"
 #include "utlbuffer.h"
 #include "utlnodehash.h"
 
@@ -368,7 +367,7 @@ static CSwitchableMutex<Private::g_mtxSyncObjMT2> g_mtxMsgReport;
 #define GLOBAL_DATA_MTX_LOCK()   Threading::g_mtxGlobal.Lock()
 #define GLOBAL_DATA_MTX_UNLOCK() Threading::g_mtxGlobal.Unlock()
 
-/*static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine, const char* szName )
+static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine, const char* szName )
 {
 	Threading::g_mtxMsgReport.Lock();
 	auto& msg = g_CompilerMsg[szName];
@@ -394,33 +393,6 @@ static CSwitchableMutex<Private::g_mtxSyncObjMT2> g_mtxMsgReport;
 			msg.error[start2].SetMsgReportedCommand( szCommand );
 	}
 	free( dupMsg );
-	Threading::g_mtxMsgReport.Unlock();
-}*/
-static void ErrMsgDispatchMsgLine( std::string szCommand, std::string szMsgLine, std::string szName )
-{
-	Threading::g_mtxMsgReport.Lock();
-	auto& msg = g_CompilerMsg[szName];
-	char* dupMsg = szMsgLine.data();
-	char *start = dupMsg, *end = dupMsg + szMsgLine.size();
-	char* start2 = start;
-
-	// Now store the message with the command it was generated from
-	for ( ; start2 < end && ( start = strchr( start2, '\n' ) ); start2 = start + 1 )
-	{
-		*start = 0;
-		if ( strstr( start2, "warning X" ) )
-			msg.warning[start2].SetMsgReportedCommand( szCommand );
-		else
-			msg.error[start2].SetMsgReportedCommand( szCommand );
-	}
-
-	if ( start2 < end )
-	{
-		if ( strstr( start2, "warning X" ) )
-			msg.warning[start2].SetMsgReportedCommand( szCommand );
-		else
-			msg.error[start2].SetMsgReportedCommand( szCommand );
-	}
 	Threading::g_mtxMsgReport.Unlock();
 }
 
@@ -848,6 +820,7 @@ public:
 	void Run( uint32_t ov = 0 )
 	{
 		uint32_t i = ov ? ov : std::thread::hardware_concurrency();
+		m_arrSubProcessInfos.reserve( i );
 		std::vector<std::thread> active;
 
 		while ( i-- > 0 )
@@ -865,7 +838,6 @@ public:
 		std::for_each( active.begin(), active.end(), []( std::thread& t ) { t.join(); } );
 	}
 
-	void QuitSubs();
 	void OnProcessST();
 
 	void Stop()
@@ -886,17 +858,8 @@ protected:
 		--pThis->m_nActive;
 	}
 
-protected:
-	struct SubProcess
-	{
-		size_t dwIndex;
-		DWORD dwSvcThreadId;
-		uint64_t iRunningCommand;
-		SubProcessKernelObjects* pCommObjs;
-		std::future<int> pThread;
-	};
-	Threading::CThreadLocal<SubProcess*> m_lpSubProcessInfo;
-	std::vector<SubProcess*> m_arrSubProcessInfos;
+	Threading::CThreadLocal<uint64_t*> m_iCurrentId;
+	std::vector<uint64_t> m_arrSubProcessInfos;
 	uint64_t m_iFirstCommand;
 	uint64_t m_iNextCommand;
 	uint64_t m_iEndCommand;
@@ -907,7 +870,6 @@ protected:
 
 	bool OnProcess();
 	void TryToPackageData( uint64_t iCommandNumber );
-	void PrepareSubProcess( SubProcess** ppSp, SubProcessKernelObjects** ppCommObjs );
 };
 
 template <typename TMutexType>
@@ -919,17 +881,6 @@ void CWorkerAccumState<TMutexType>::RangeBegin( uint64_t iFirstCommand, uint64_t
 	m_iLastFinished = iFirstCommand;
 	m_hCombo        = nullptr;
 	CfgProcessor::Combo_GetNext( m_iNextCommand, m_hCombo, m_iEndCommand );
-
-	// Notify all connected sub-processes that the master is still alive
-	for ( SubProcess* pSp : m_arrSubProcessInfos )
-	{
-		SubProcessKernelObjects_Memory shrmem( pSp->pCommObjs );
-		if ( void* pvMemory = shrmem.Lock() )
-		{
-			strcpy_s( static_cast<char*>( pvMemory ), 32, "keepalive" );
-			shrmem.Unlock();
-		}
-	}
 }
 
 template <typename TMutexType>
@@ -937,39 +888,6 @@ void CWorkerAccumState<TMutexType>::RangeFinished()
 {
 	// Finish packaging data
 	TryToPackageData( m_iEndCommand - 1 );
-}
-
-template <typename TMutexType>
-void CWorkerAccumState<TMutexType>::QuitSubs()
-{
-	using namespace std::chrono_literals;
-	std::vector<std::reference_wrapper<const std::future<int>>> m_arrWait2;
-	m_arrWait2.reserve( m_arrSubProcessInfos.size() );
-
-	for ( SubProcess* pSp : m_arrSubProcessInfos )
-	{
-		if ( !( pSp->pThread.valid() && pSp->pThread.wait_for( 0s ) == std::future_status::timeout ) )
-			continue;
-		SubProcessKernelObjects_Memory shrmem( pSp->pCommObjs );
-		if ( void* pvMemory = shrmem.Lock() )
-		{
-			strcpy_s( static_cast<char*>( pvMemory ), 10, "quit" );
-			shrmem.Unlock();
-		}
-
-		if ( pSp->pThread.valid() )
-			m_arrWait2.emplace_back( pSp->pThread );
-	}
-
-	if ( !m_arrWait2.empty() )
-		std::for_each( m_arrWait2.begin(), m_arrWait2.end(), []( const std::future<int>& t ) { t.wait(); } );
-
-	for ( SubProcess* pSp : m_arrSubProcessInfos )
-	{
-		delete pSp->pCommObjs;
-		delete pSp;
-	}
-	m_arrSubProcessInfos.clear();
 }
 
 template <size_t N>
@@ -996,72 +914,15 @@ static __forceinline void PrepareFlagsForSubprocess( char ( &pBuf )[N] )
 }
 
 template <typename TMutexType>
-void CWorkerAccumState<TMutexType>::PrepareSubProcess( SubProcess** ppSp, SubProcessKernelObjects** ppCommObjs )
-{
-	SubProcess* pSp = m_lpSubProcessInfo.Get();
-	SubProcessKernelObjects* pCommObjs;
-
-	if ( pSp )
-		pCommObjs = pSp->pCommObjs;
-	else
-	{
-		pSp = new SubProcess;
-		m_lpSubProcessInfo.Set( pSp );
-
-		pSp->dwSvcThreadId = GetCurrentThreadId();
-
-		char chBaseNameBuffer[0x30];
-		sprintf_s( chBaseNameBuffer, "SHCMPL_SUB_%08lX_%08llX_%08lX", pSp->dwSvcThreadId, time( nullptr ), GetCurrentProcessId() );
-		pCommObjs = pSp->pCommObjs = new SubProcessKernelObjects_Create( chBaseNameBuffer );
-
-		pSp->pThread = std::move( std::async( std::launch::async, ShaderCompile_Subprocess_Main, std::string( chBaseNameBuffer ), gFlags ) );
-
-		m_pMutex->lock();
-		pSp->dwIndex = m_arrSubProcessInfos.size();
-		m_arrSubProcessInfos.emplace_back( pSp );
-		m_pMutex->unlock();
-	}
-
-	if ( ppSp )
-		*ppSp = pSp;
-	if ( ppCommObjs )
-		*ppCommObjs = pCommObjs;
-}
-
-template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::ExecuteCompileCommandThreaded( CfgProcessor::ComboHandle hCombo )
 {
-	SubProcessKernelObjects* pCommObjs = nullptr;
-	PrepareSubProcess( nullptr, &pCommObjs );
+	CmdSink::IResponse* pResponse = nullptr;
 
-	// Execute the command
-	SubProcessKernelObjects_Memory shrmem( pCommObjs );
+	char chBuffer[4096];
+	Combo_FormatCommand( hCombo, chBuffer );
+	InterceptFxc::TryExecuteCommand( chBuffer, &pResponse, gFlags );
 
-	{
-		void* pvMemory = shrmem.Lock();
-		Assert( pvMemory );
-
-		constexpr size_t memSize = 4 * 1024 * 1024 - 2 * sizeof( DWORD );
-		Combo_FormatCommand( hCombo, std::span<char, memSize>( static_cast<char*>( pvMemory ), memSize ) );
-
-		shrmem.Unlock();
-	}
-
-	// Obtain the command response
-	{
-		const void* pvMemory = shrmem.Lock();
-		Assert( pvMemory );
-
-		CmdSink::IResponse* pResponse;
-		if ( pvMemory )
-			pResponse = new CSubProcessResponse( pvMemory );
-		else
-			pResponse = new CmdSink::CResponseError;
-
-		HandleCommandResponse( hCombo, pResponse );
-
-		shrmem.Unlock();
-	}
+	HandleCommandResponse( hCombo, pResponse );
 }
 
 template <typename TMutexType>
@@ -1092,8 +953,8 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 
 	// Command info
 	const CfgProcessor::CfgEntryInfo* pEntryInfo = Combo_GetEntryInfo( hCombo );
-	const uint64_t iComboIndex                     = Combo_GetComboNum( hCombo );
-	const uint64_t iCommandNumber                  = Combo_GetCommandNum( hCombo );
+	const uint64_t iComboIndex                   = Combo_GetComboNum( hCombo );
+	const uint64_t iCommandNumber                = Combo_GetCommandNum( hCombo );
 
 	if ( pResponse->Succeeded() )
 	{
@@ -1124,8 +985,7 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 		char chBuffer[4096];
 		Combo_FormatCommandHumanReadable( hCombo, chBuffer );
 
-		//ErrMsgDispatchMsgLine( chBuffer, szListing, pEntryInfo->m_szName );
-		std::async( std::launch::async, ErrMsgDispatchMsgLine, std::string( chBuffer ), std::string( szListing ), std::string( pEntryInfo->m_szName ) );
+		ErrMsgDispatchMsgLine( chBuffer, szListing, pEntryInfo->m_szName );
 		if ( !pResponse->Succeeded() && g_bFastFail )
 			StopCommandRange();
 	}
@@ -1146,9 +1006,9 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 	uint64_t iFinishedByNow = iCommandNumber + 1;
 
 	// Check if somebody is running an earlier command
-	for ( SubProcess* pSp : m_arrSubProcessInfos )
+	for ( const auto& iRunningCommand : m_arrSubProcessInfos )
 	{
-		if ( pSp->iRunningCommand < iCommandNumber )
+		if ( iRunningCommand < iCommandNumber )
 		{
 			iFinishedByNow = 0;
 			break;
@@ -1219,12 +1079,11 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 {
 	m_pMutex->lock();
 	CfgProcessor::ComboHandle hThreadCombo = m_hCombo ? Combo_Alloc( m_hCombo ) : nullptr;
+	m_arrSubProcessInfos.resize( m_arrSubProcessInfos.size() + 1 );
+	m_iCurrentId.Set( &m_arrSubProcessInfos.back() );
 	m_pMutex->unlock();
 
 	uint64_t iThreadCommand = ~0ULL;
-
-	SubProcess* pSp = nullptr;
-	PrepareSubProcess( &pSp, nullptr );
 
 	for ( ;; )
 	{
@@ -1232,14 +1091,14 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 		if ( m_hCombo )
 		{
 			Combo_Assign( hThreadCombo, m_hCombo );
-			pSp->iRunningCommand = Combo_GetCommandNum( hThreadCombo );
+			*m_iCurrentId.Get() = Combo_GetCommandNum( hThreadCombo );
 			Combo_GetNext( iThreadCommand, m_hCombo, m_iEndCommand );
 		}
 		else
 		{
 			Combo_Free( hThreadCombo );
-			iThreadCommand       = ~0ULL;
-			pSp->iRunningCommand = ~0ULL;
+			iThreadCommand      = ~0ULL;
+			*m_iCurrentId.Get() = ~0ULL;
 		}
 		m_pMutex->unlock();
 
@@ -1381,7 +1240,6 @@ void ProcessCommandRange_Singleton::ProcessCommandRange( uint64_t shaderStart, u
 		cmdLine.get( "-threads" )->getULong( threads );
 		pWorkerObj->Run( threads );
 		pWorkerObj->RangeFinished();
-		pWorkerObj->QuitSubs();
 	}
 	else
 	{
