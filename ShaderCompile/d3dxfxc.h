@@ -20,12 +20,12 @@
 class CSharedFile final : private std::vector<char>
 {
 public:
-	CSharedFile( std::vector<char>&& data );
+	CSharedFile( std::vector<char>&& data ) noexcept;
 	using std::vector<char>::vector;
 	~CSharedFile() = default;
 
-	[[nodiscard]] const void* Data() const { return data(); }
-	[[nodiscard]] size_t Size() const { return size(); }
+	[[nodiscard]] const void* Data() const noexcept { return data(); }
+	[[nodiscard]] size_t Size() const noexcept { return size(); }
 };
 
 class FileCache final
@@ -49,9 +49,7 @@ extern FileCache fileCache;
 
 namespace InterceptFxc
 {
-
-bool TryExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, unsigned long flags );
-
+	void ExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, unsigned long flags );
 }; // namespace InterceptFxc
 
 #endif // #ifndef D3DXFXC_H

@@ -20,6 +20,7 @@
 #include "DbgHelp.h"
 #include "d3dcompiler.h"
 #include <atomic>
+#include <concepts>
 #include <chrono>
 #include <cstdlib>
 #include <future>
@@ -74,8 +75,8 @@ static uint64_t g_numShaders = 0, g_numCompileCommands = 0, g_numStaticCombos = 
 
 using Clock = std::chrono::high_resolution_clock;
 std::string g_pShaderPath;
-std::string g_pShaderVersion;
-uint32_t g_pShaderCRC;
+static std::string g_pShaderVersion;
+static uint32_t g_pShaderCRC;
 static Clock::time_point g_flStartTime;
 static DWORD gFlags		= 0;
 bool g_bVerbose			= false;
@@ -103,7 +104,7 @@ static void Shader_ParseShaderInfoFromCompileCommands( const CfgProcessor::CfgEn
 struct CByteCodeBlock
 {
 	CByteCodeBlock *m_pNext, *m_pPrev;
-	int m_nCRC32;
+	int32_t m_nCRC32;
 	uint64_t m_nComboID;
 	size_t m_nCodeSize;
 	std::unique_ptr<uint8_t[]> m_ByteCode;
@@ -150,7 +151,7 @@ struct CStaticCombo // all the data for one static combo
 			return GetData();
 		}
 
-		using std::unique_ptr<byte[]>::operator bool;
+		using std::unique_ptr<uint8_t[]>::operator bool;
 	};
 	CStaticCombo *m_pNext, *m_pPrev;
 private:
@@ -257,19 +258,19 @@ class CompilerMsgInfo
 public:
 	CompilerMsgInfo() : m_numTimesReported( 0 ) {}
 
-	void SetMsgReportedCommand( const std::string& szCommand, int numTimesReported = 1 )
+	void SetMsgReportedCommand( const std::string& szCommand )
 	{
 		if ( !m_numTimesReported )
 			m_sFirstCommand = szCommand;
-		m_numTimesReported += numTimesReported;
+		++m_numTimesReported;
 	}
 
 	[[nodiscard]] const std::string& GetFirstCommand() const { return m_sFirstCommand; }
-	[[nodiscard]] int GetNumTimesReported() const { return m_numTimesReported; }
+	[[nodiscard]] uint64_t GetNumTimesReported() const { return m_numTimesReported; }
 
 protected:
 	std::string m_sFirstCommand;
-	int m_numTimesReported;
+	uint64_t m_numTimesReported;
 };
 
 static robin_hood::unordered_flat_set<std::string> g_ShaderHadError;
@@ -286,38 +287,15 @@ namespace Threading
 class null_mutex
 {
 public:
-	void lock() {}
-	void unlock() {}
+	void lock() noexcept {}
+	void unlock() noexcept {}
 };
 
 template <class T>
-class CThreadLocal
+concept Mutex = requires( T a )
 {
-	static_assert( sizeof( T ) == sizeof( void* ) );
-
-public:
-	CThreadLocal()
-	{
-		m_index = TlsAlloc();
-	}
-
-	~CThreadLocal()
-	{
-		TlsFree( m_index );
-	}
-
-	[[nodiscard]] T Get() const
-	{
-		return reinterpret_cast<T>( TlsGetValue( m_index ) );
-	}
-
-	void Set( T val )
-	{
-		TlsSetValue( m_index, reinterpret_cast<void*>( val ) );
-	}
-
-private:
-	uint32_t m_index;
+	{ a.lock() } -> std::convertible_to<void>;
+	{ a.unlock() } -> std::convertible_to<void>;
 };
 
 enum Mode
@@ -329,13 +307,14 @@ enum Mode
 // A special object that makes single-threaded code incur no penalties
 // and multithreaded code to be synchronized properly.
 template <auto& mtx>
+	requires Mutex<std::decay_t<decltype( mtx )>>
 class CSwitchableMutex
 {
 	using mtx_type = std::decay_t<decltype( mtx )>;
 public:
-	FORCEINLINE explicit CSwitchableMutex() : m_pUseMtx( nullptr ) {}
+	FORCEINLINE explicit CSwitchableMutex() noexcept : m_pUseMtx( nullptr ) {}
 
-	FORCEINLINE void SetThreadedMode( Mode eMode ) { m_pUseMtx = eMode ? &mtx : nullptr; }
+	FORCEINLINE void SetThreadedMode( Mode eMode ) noexcept { m_pUseMtx = eMode ? &mtx : nullptr; }
 
 	FORCEINLINE void Lock()
 	{
@@ -371,7 +350,7 @@ static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine,
 {
 	Threading::g_mtxMsgReport.Lock();
 	auto& msg = g_CompilerMsg[szName];
-	char* dupMsg = strdup( szMsgLine );
+	char* dupMsg = _strdup( szMsgLine );
 	char *start = dupMsg, *end = dupMsg + strlen( dupMsg );
 	char* start2 = start;
 
@@ -440,7 +419,7 @@ static void ShaderHadErrorDispatchInt( const char* szShader )
 // returns negative number if idA is less than idB, positive when idA is greater than idB
 // and zero if the ids are equal
 
-static bool CompareDupComboIndices( const StaticComboAliasRecord_t& pA, const StaticComboAliasRecord_t& pB )
+static bool CompareDupComboIndices( const StaticComboAliasRecord_t& pA, const StaticComboAliasRecord_t& pB ) noexcept
 {
 	return pA.m_nStaticComboID < pB.m_nStaticComboID;
 }
@@ -478,7 +457,7 @@ static void FlushCombos( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamicComboBu
 	pDynamicComboBuffer.Clear(); // start over
 }
 
-static void OutputDynamicCombo( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamicComboBuffer, CUtlBuffer& pBuf, uint64_t nComboID, uint32_t nComboSize, uint8_t* pComboCode )
+static void OutputDynamicCombo( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamicComboBuffer, CUtlBuffer& pBuf, uint64_t nComboID, uint32_t nComboSize, const uint8_t* pComboCode )
 {
 	if ( pDynamicComboBuffer.TellPut() + nComboSize + 16 >= MAX_SHADER_UNPACKED_BLOCK_SIZE )
 		FlushCombos( pnTotalFlushedSize, pDynamicComboBuffer, pBuf );
@@ -497,7 +476,7 @@ static void GetVCSFilenames( std::span<char> pszMainOutFileName, const ShaderInf
 	{
 		std::cout << "mkdir " << pszMainOutFileName.data() << std::endl;
 		// doh. . need to make the directory that the vcs file is going to go into.
-		std::filesystem::create_directories( pszMainOutFileName.data() );
+		fs::create_directories( pszMainOutFileName.data() );
 	}
 
 	strcat_s( pszMainOutFileName.data(), pszMainOutFileName.size(), "\\" );
@@ -535,14 +514,13 @@ struct StaticComboAuxInfo_t : StaticComboRecord_t
 	CStaticCombo* m_pByteCode;
 };
 
-static bool CompareComboIds( const StaticComboAuxInfo_t& pA, const StaticComboAuxInfo_t& pB )
+static bool CompareComboIds( const StaticComboAuxInfo_t& pA, const StaticComboAuxInfo_t& pB ) noexcept
 {
 	return pA.m_nStaticComboID < pB.m_nStaticComboID;
 }
 
 static void WriteShaderFiles( const char* pShaderName )
 {
-	using namespace std;
 	if ( !g_ShaderWrittenToDisk.emplace( pShaderName ).second )
 		return;
 
@@ -632,17 +610,21 @@ static void WriteShaderFiles( const char* pShaderName )
 			const CStaticCombo::PackedCode& code = pStatic->Code();
 			if ( code.GetLength() )
 			{
-				StaticComboAuxInfo_t hdr;
-				hdr.m_nStaticComboID  = gsl::narrow<uint32_t>( pStatic->ComboId() );
-				hdr.m_nFileOffset     = 0; // fill in later
-				hdr.m_nCRC32          = CRC32::ProcessSingleBuffer( code.GetData(), code.GetLength() );
+				StaticComboAuxInfo_t hdr {
+					{
+						.m_nStaticComboID = gsl::narrow<uint32_t>( pStatic->ComboId() ),
+						.m_nFileOffset = 0,
+					},
+					CRC32::ProcessSingleBuffer( code.GetData(), code.GetLength() ),
+					pStatic
+				};
 				const uint32_t nHashIdx = hdr.m_nCRC32 % STATIC_COMBO_HASH_SIZE;
-				hdr.m_pByteCode       = pStatic;
+				__assume( 0 <= nHashIdx && nHashIdx < STATIC_COMBO_HASH_SIZE );
 
 				// now, see if we have an identical static combo
 				auto& hash = comboIndicesHashedByCRC32[nHashIdx];
 				bool bIsDuplicate = false;
-				for ( size_t i : hash )
+				for ( const size_t i : hash )
 				{
 					const StaticComboAuxInfo_t& check = StaticComboHeaders[i];
 					const CStaticCombo::PackedCode& checkCode = check.m_pByteCode->Code();
@@ -657,7 +639,7 @@ static void WriteShaderFiles( const char* pShaderName )
 
 				if ( !bIsDuplicate )
 				{
-					StaticComboHeaders.emplace_back( hdr );
+					StaticComboHeaders.emplace_back( std::move( hdr ) );
 					hash.emplace_back( StaticComboHeaders.size() - 1 );
 				}
 			}
@@ -801,11 +783,11 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 	return nBytesWritten;
 }
 
-template <typename TMutexType>
+template <Threading::Mutex TMutexType>
 class CWorkerAccumState
 {
 public:
-	explicit CWorkerAccumState( TMutexType* pMutex )
+	explicit CWorkerAccumState( TMutexType* pMutex ) noexcept
 		: m_pMutex( pMutex ), m_iFirstCommand( 0 )
 		, m_iNextCommand( 0 ), m_iEndCommand( 0 )
 		, m_iLastFinished( 0 ), m_hCombo( nullptr ) {}
@@ -819,7 +801,9 @@ public:
 
 	void Run( uint32_t ov = 0 )
 	{
-		uint32_t i = ov ? ov : std::thread::hardware_concurrency();
+		const uint32_t maxThreads = std::thread::hardware_concurrency();
+		uint32_t i = ov ? std::min( ov, maxThreads ) : maxThreads;
+
 		m_arrSubProcessInfos.reserve( i );
 		std::vector<std::thread> active;
 
@@ -840,7 +824,7 @@ public:
 
 	void OnProcessST();
 
-	void Stop()
+	void Stop() noexcept
 	{
 		m_bBreak = true;
 	}
@@ -858,7 +842,7 @@ protected:
 		--pThis->m_nActive;
 	}
 
-	Threading::CThreadLocal<uint64_t*> m_iCurrentId;
+	thread_local static uint64_t* m_iCurrentId;
 	std::vector<uint64_t> m_arrSubProcessInfos;
 	uint64_t m_iFirstCommand;
 	uint64_t m_iNextCommand;
@@ -871,8 +855,10 @@ protected:
 	bool OnProcess();
 	void TryToPackageData( uint64_t iCommandNumber );
 };
+template <Threading::Mutex TMutexType>
+thread_local uint64_t* CWorkerAccumState<TMutexType>::m_iCurrentId;
 
-template <typename TMutexType>
+template <Threading::Mutex TMutexType>
 void CWorkerAccumState<TMutexType>::RangeBegin( uint64_t iFirstCommand, uint64_t iEndCommand )
 {
 	m_iFirstCommand = iFirstCommand;
@@ -883,7 +869,7 @@ void CWorkerAccumState<TMutexType>::RangeBegin( uint64_t iFirstCommand, uint64_t
 	CfgProcessor::Combo_GetNext( m_iNextCommand, m_hCombo, m_iEndCommand );
 }
 
-template <typename TMutexType>
+template <Threading::Mutex TMutexType>
 void CWorkerAccumState<TMutexType>::RangeFinished()
 {
 	// Finish packaging data
@@ -913,19 +899,19 @@ static __forceinline void PrepareFlagsForSubprocess( char ( &pBuf )[N] )
 	V_StrTrim( pBuf );
 }
 
-template <typename TMutexType>
+template <Threading::Mutex TMutexType>
 void CWorkerAccumState<TMutexType>::ExecuteCompileCommandThreaded( CfgProcessor::ComboHandle hCombo )
 {
 	CmdSink::IResponse* pResponse = nullptr;
 
 	char chBuffer[4096];
 	Combo_FormatCommand( hCombo, chBuffer );
-	InterceptFxc::TryExecuteCommand( chBuffer, &pResponse, gFlags );
+	InterceptFxc::ExecuteCommand( chBuffer, &pResponse, gFlags );
 
 	HandleCommandResponse( hCombo, pResponse );
 }
 
-template <typename TMutexType>
+template <Threading::Mutex TMutexType>
 void CWorkerAccumState<TMutexType>::ExecuteCompileCommand( CfgProcessor::ComboHandle hCombo )
 {
 	CmdSink::IResponse* pResponse = nullptr;
@@ -939,14 +925,14 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommand( CfgProcessor::ComboHa
 
 	char chBuffer[4096];
 	Combo_FormatCommand( hCombo, chBuffer );
-	InterceptFxc::TryExecuteCommand( chBuffer, &pResponse, gFlags );
+	InterceptFxc::ExecuteCommand( chBuffer, &pResponse, gFlags );
 
 	HandleCommandResponse( hCombo, pResponse );
 }
 
 static void StopCommandRange();
 
-template <typename TMutexType>
+template <Threading::Mutex TMutexType>
 void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHandle hCombo, CmdSink::IResponse* pResponse )
 {
 	Assert( pResponse );
@@ -996,7 +982,7 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 	TryToPackageData( iCommandNumber );
 }
 
-template <typename TMutexType>
+template <Threading::Mutex TMutexType>
 void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 {
 	if ( m_bBreak )
@@ -1074,13 +1060,13 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 	Combo_Free( hChEnd );
 }
 
-template <typename TMutexType>
+template <Threading::Mutex TMutexType>
 bool CWorkerAccumState<TMutexType>::OnProcess()
 {
 	m_pMutex->lock();
 	CfgProcessor::ComboHandle hThreadCombo = m_hCombo ? Combo_Alloc( m_hCombo ) : nullptr;
 	m_arrSubProcessInfos.resize( m_arrSubProcessInfos.size() + 1 );
-	m_iCurrentId.Set( &m_arrSubProcessInfos.back() );
+	m_iCurrentId = &m_arrSubProcessInfos.back();
 	m_pMutex->unlock();
 
 	uint64_t iThreadCommand = ~0ULL;
@@ -1091,14 +1077,14 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 		if ( m_hCombo )
 		{
 			Combo_Assign( hThreadCombo, m_hCombo );
-			*m_iCurrentId.Get() = Combo_GetCommandNum( hThreadCombo );
+			*m_iCurrentId = Combo_GetCommandNum( hThreadCombo );
 			Combo_GetNext( iThreadCommand, m_hCombo, m_iEndCommand );
 		}
 		else
 		{
 			Combo_Free( hThreadCombo );
-			iThreadCommand      = ~0ULL;
-			*m_iCurrentId.Get() = ~0ULL;
+			iThreadCommand = ~0ULL;
+			*m_iCurrentId  = ~0ULL;
 		}
 		m_pMutex->unlock();
 
@@ -1112,7 +1098,7 @@ bool CWorkerAccumState<TMutexType>::OnProcess()
 	return false;
 }
 
-template <typename TMutexType>
+template <Threading::Mutex TMutexType>
 void CWorkerAccumState<TMutexType>::OnProcessST()
 {
 	while ( m_hCombo && !m_bBreak )
@@ -1300,8 +1286,8 @@ static void Shared_ParseListOfCompileCommands()
 
 	CfgProcessor::ReadConfiguration( fileListFileName );*/
 
-	const std::string name = Parser::ConstructName( std::filesystem::path( *cmdLine.lastArgs[0] ).filename().string(), g_pShaderVersion );
-	if ( Parser::CheckCrc( ( std::filesystem::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), name, g_pShaderCRC ) && !cmdLine.isSet( "-force" ) )
+	const std::string name = Parser::ConstructName( fs::path( *cmdLine.lastArgs[0] ).filename().string(), g_pShaderVersion );
+	if ( Parser::CheckCrc( ( fs::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), name, g_pShaderCRC ) && !cmdLine.isSet( "-force" ) )
 	{
 		exit( 0 );
 	}
@@ -1311,12 +1297,12 @@ static void Shared_ParseListOfCompileCommands()
 	uint32_t centroid_mask = 0;
 	std::vector<std::string> includes;
 
-	if ( !Parser::ParseFile( ( std::filesystem::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), g_pShaderVersion, static_c, dynamic_c, skip, centroid_mask, includes ) )
+	if ( !Parser::ParseFile( ( fs::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), g_pShaderVersion, static_c, dynamic_c, skip, centroid_mask, includes ) )
 	{
 		std::cout << clr::red << "Failed to parse " << *cmdLine.lastArgs[0] << clr::reset << std::endl;
 		exit( -1 );
 	}
-	Parser::WriteInclude( ( std::filesystem::path( g_pShaderPath ) / "include"sv / ( name + ".inc" ) ).string(), name, static_c, dynamic_c, skip );
+	Parser::WriteInclude( ( fs::path( g_pShaderPath ) / "include"sv / ( name + ".inc" ) ).string(), name, static_c, dynamic_c, skip );
 	ConfigurationProcessing::SetupConfigurationDirect( name, g_pShaderVersion, centroid_mask, static_c, dynamic_c, skip, includes );
 
 	CfgProcessor::DescribeConfiguration( g_arrCompileEntries );
@@ -1465,7 +1451,6 @@ static void PrintCompileErrors()
 			const auto& msg             = sMsg.second;
 			const auto& shaderName      = sMsg.first;
 			const std::string searchPat = *cmdLine.lastArgs[0] + "("; // TODO: rework when readding support for multiple files
-			const size_t nameLen        = searchPat.length();
 
 			if ( const size_t warnings = msg.warning.size() )
 				std::cout << shaderName << " " << clr::yellow << warnings << " WARNING(S):                                                         " << clr::reset << std::endl;
@@ -1474,11 +1459,10 @@ static void PrintCompileErrors()
 			{
 				const auto& szMsg          = warn.first;
 				const CompilerMsgInfo& cmi = warn.second;
-				const int numReported      = cmi.GetNumTimesReported();
+				const uint64_t numReported = cmi.GetNumTimesReported();
 
 				std::string m = trim( szMsg );
-				size_t find;
-				if ( ( find = m.find( searchPat ) ) != std::string::npos )
+				if ( size_t find = m.find( searchPat ); find != std::string::npos )
 					m = m.replace( find - cwdLen, cwdLen, "" );
 				std::cout << m << "\nReported " << clr::green << numReported << clr::reset << " time(s)" << std::endl;
 			}
@@ -1492,11 +1476,10 @@ static void PrintCompileErrors()
 				const auto& szMsg          = err.first;
 				const CompilerMsgInfo& cmi = err.second;
 				const std::string& cmd     = cmi.GetFirstCommand();
-				const int numReported      = cmi.GetNumTimesReported();
+				const uint64_t numReported = cmi.GetNumTimesReported();
 
 				std::string m = trim( szMsg );
-				size_t find;
-				if ( ( find = m.find( searchPat ) ) != std::string::npos )
+				if ( size_t find = m.find( searchPat ); find != std::string::npos )
 					m = m.replace( find - cwdLen, cwdLen, "" );
 				std::cout << m << "\nReported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
 
@@ -1641,9 +1624,9 @@ int main( int argc, const char* argv[] )
 	cmdLine.get( "-shaderpath" )->getString( g_pShaderPath );
 	if ( cmdLine.isSet( "-crc" ) )
 	{
-		const std::string name = Parser::ConstructName( std::filesystem::path( *cmdLine.lastArgs[0] ).filename().string(), g_pShaderVersion );
+		const std::string name = Parser::ConstructName( fs::path( *cmdLine.lastArgs[0] ).filename().string(), g_pShaderVersion );
 		uint32_t crc = 0;
-		Parser::CheckCrc( ( std::filesystem::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), name, crc );
+		Parser::CheckCrc( ( fs::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), name, crc );
 		std::cout << crc << std::endl;
 		return 0;
 	}
@@ -1656,13 +1639,13 @@ int main( int argc, const char* argv[] )
 		uint32_t centroid_mask = 0;
 		std::vector<std::string> includes;
 
-		if ( !Parser::ParseFile( ( std::filesystem::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), g_pShaderVersion, static_c, dynamic_c, skip, centroid_mask, includes ) )
+		if ( !Parser::ParseFile( ( fs::path( g_pShaderPath ) / *cmdLine.lastArgs[0] ).string(), g_pShaderVersion, static_c, dynamic_c, skip, centroid_mask, includes ) )
 		{
 			std::cout << clr::red << "Failed to parse " << *cmdLine.lastArgs[0] << clr::reset << std::endl;
 			return -1;
 		}
-		const std::string name = Parser::ConstructName( std::filesystem::path( *cmdLine.lastArgs[0] ).filename().string(), g_pShaderVersion );
-		Parser::WriteInclude( ( std::filesystem::path( g_pShaderPath ) / "include"sv / ( name + ".inc" ) ).string(), name, static_c, dynamic_c, skip );
+		const std::string name = Parser::ConstructName( fs::path( *cmdLine.lastArgs[0] ).filename().string(), g_pShaderVersion );
+		Parser::WriteInclude( ( fs::path( g_pShaderPath ) / "include"sv / ( name + ".inc" ) ).string(), name, static_c, dynamic_c, skip );
 		return 0;
 	}
 

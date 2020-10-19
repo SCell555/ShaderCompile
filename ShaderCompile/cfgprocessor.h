@@ -65,13 +65,13 @@ ComboHandle Combo_GetCombo( uint64_t iCommandNumber );
 ComboHandle Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint64_t iCommandEnd );
 void Combo_FormatCommand( ComboHandle hCombo, std::span<char> pchBuffer );
 void Combo_FormatCommandHumanReadable( ComboHandle hCombo, std::span<char> pchBuffer );
-uint64_t Combo_GetCommandNum( ComboHandle hCombo );
-uint64_t Combo_GetComboNum( ComboHandle hCombo );
-CfgEntryInfo const* Combo_GetEntryInfo( ComboHandle hCombo );
+uint64_t Combo_GetCommandNum( ComboHandle hCombo ) noexcept;
+uint64_t Combo_GetComboNum( ComboHandle hCombo ) noexcept;
+const CfgEntryInfo* Combo_GetEntryInfo( ComboHandle hCombo ) noexcept;
 
-ComboHandle Combo_Alloc( ComboHandle hComboCopyFrom );
+ComboHandle Combo_Alloc( ComboHandle hComboCopyFrom ) noexcept;
 void Combo_Assign( ComboHandle hComboDst, ComboHandle hComboSrc );
-void Combo_Free( ComboHandle& rhComboFree );
+void Combo_Free( ComboHandle& rhComboFree ) noexcept;
 }; // namespace CfgProcessor
 
 #endif // #ifndef CFGPROCESSOR_H

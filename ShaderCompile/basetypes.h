@@ -8,8 +8,6 @@
 	#include <cassert>
 #endif
 
-using byte = std::uint8_t;
-
 #ifdef _DEBUG
 	#define Assert assert
 #else
