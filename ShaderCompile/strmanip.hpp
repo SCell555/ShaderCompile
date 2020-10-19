@@ -3,7 +3,7 @@
 
 #include <iomanip>
 
-static std::string PrettyPrintNumber( uint64_t k )
+static inline std::string PrettyPrintNumber( uint64_t k )
 {
 	char chCompileString[50] = { 0 };
 	char* pchPrint = chCompileString + sizeof( chCompileString ) - 3;
@@ -16,17 +16,17 @@ static std::string PrettyPrintNumber( uint64_t k )
 	return pchPrint;
 }
 
-static void __PrettyPrintNumber( std::ios_base& s, uint64_t k )
+static inline void __PrettyPrintNumber( std::ios_base& s, uint64_t k )
 {
 	dynamic_cast<std::ostream&>( s ) << PrettyPrintNumber( k );
 }
 
-static std::_Smanip<uint64_t> PrettyPrint( uint64_t i )
+static inline std::_Smanip<uint64_t> PrettyPrint( uint64_t i )
 {
 	return { __PrettyPrintNumber, i };
 }
 
-static void __FormatTime( std::ios_base& s, int64_t nInputSeconds )
+static inline void __FormatTime( std::ios_base& s, int64_t nInputSeconds )
 {
 	int64_t nMinutes = nInputSeconds / 60;
 	const int64_t nSeconds = nInputSeconds - nMinutes * 60;
@@ -44,7 +44,7 @@ static void __FormatTime( std::ios_base& s, int64_t nInputSeconds )
 		str << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
 }
 
-static void __FormatTime2( std::ios_base& s, int64_t nInputSeconds )
+static inline void __FormatTime2( std::ios_base& s, int64_t nInputSeconds )
 {
 	int64_t nMinutes = nInputSeconds / 60;
 	const int64_t nSeconds = nInputSeconds - nMinutes * 60;
@@ -62,12 +62,12 @@ static void __FormatTime2( std::ios_base& s, int64_t nInputSeconds )
 		str << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
 }
 
-static std::_Smanip<int64_t> FormatTime( int64_t i )
+static inline std::_Smanip<int64_t> FormatTime( int64_t i )
 {
 	return { __FormatTime, i };
 }
 
-static std::_Smanip<int64_t> FormatTimeShort( int64_t i )
+static inline std::_Smanip<int64_t> FormatTimeShort( int64_t i )
 {
 	return { __FormatTime2, i };
 }
@@ -77,7 +77,7 @@ static __forceinline bool PATHSEPARATOR( char c )
 	return c == '\\' || c == '/';
 }
 
-static const char* V_GetFileExtension( const char* path )
+static inline const char* V_GetFileExtension( const char* path )
 {
 	const char* src = path + ( strlen( path ) - 1 );
 
@@ -92,10 +92,10 @@ static const char* V_GetFileExtension( const char* path )
 
 static __forceinline bool V_IsAbsolutePath( const char* pStr )
 {
-	return pStr[0] && pStr[1] == ':' || pStr[0] == '/' || pStr[0] == '\\';
+	return ( pStr[0] && pStr[1] == ':' ) || pStr[0] == '/' || pStr[0] == '\\';
 }
 
-static void V_StripFilename( char* path )
+static inline void V_StripFilename( char* path )
 {
 	int length = static_cast<int>( strlen( path ) ) - 1;
 	if ( length <= 0 )
@@ -107,7 +107,7 @@ static void V_StripFilename( char* path )
 	path[length] = 0;
 }
 
-static void V_FixSlashes( char* pname, char separator = '\\' )
+static inline void V_FixSlashes( char* pname, char separator = '\\' )
 {
 	while ( *pname )
 	{
@@ -117,7 +117,7 @@ static void V_FixSlashes( char* pname, char separator = '\\' )
 	}
 }
 
-static void V_StrTrim( char* pStr )
+static inline void V_StrTrim( char* pStr )
 {
 	char* pSource = pStr;
 	char* pDest = pStr;

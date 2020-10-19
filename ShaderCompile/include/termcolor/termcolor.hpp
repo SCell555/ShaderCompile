@@ -44,17 +44,17 @@
 
 namespace termcolor
 {
-	struct __color_index_8bit
-	{
-		std::uint8_t index;
-		bool foreground;
-	};
+    struct __color_index_8bit
+    {
+        std::uint8_t index;
+        bool foreground;
+    };
 
-	struct __color_rgb_24bit
-	{
-		std::uint8_t red, green, blue;
-		bool foreground;
-	};
+    struct __color_rgb_24bit
+    {
+        std::uint8_t red, green, blue;
+        bool foreground;
+    };
 
     // Forward declaration of the `_internal` namespace.
     // All comments are below.
@@ -64,27 +64,52 @@ namespace termcolor
         // colorize / nocolorize I/O manipulators for details.
         static int colorize_index = std::ios_base::xalloc();
 
-        inline FILE* get_standard_stream(const std::ostream& stream);
+        inline FILE* get_standard_stream(const std::ostream& stream) noexcept;
         inline bool is_colorized(std::ostream& stream);
         inline bool is_atty(const std::ostream& stream);
 
         struct ansi_color
         {
-            char buffer[24];
+            char buffer[24]{};
 
-            ansi_color(const __color_index_8bit& color)
+            constexpr ansi_color(const __color_index_8bit& color) noexcept
             {
-                sprintf_s(buffer, "\033[%c8;5;%dm",
-                    (color.foreground ? '3':'4'), color.index);
+                buffer[0] = '\033';
+                buffer[1] = '[';
+                buffer[2] = color.foreground ? '3':'4';
+                buffer[3] = '8';
+                buffer[4] = ';';
+                buffer[5] = '5';
+                buffer[6] = ';';
+                esc( color.index, buffer + 7, 'm' );
+                buffer[11] = '\0';
             }
 
-            ansi_color(const __color_rgb_24bit& rgb)
+            constexpr ansi_color(const __color_rgb_24bit& rgb) noexcept
             {
-                sprintf_s(buffer, "\033[%c8;2;%d;%d;%dm",
-                    (rgb.foreground ? '3':'4'), rgb.red, rgb.green, rgb.blue);
+                buffer[0] = '\033';
+                buffer[1] = '[';
+                buffer[2] = rgb.foreground ? '3':'4';
+                buffer[3] = '8';
+                buffer[4] = ';';
+                buffer[5] = '2';
+                buffer[6] = ';';
+                esc( rgb.red, buffer + 7, ';' );
+                esc( rgb.green, buffer + 11, ';' );
+                esc( rgb.blue, buffer + 15, 'm' );
+                buffer[19] = '\0';
             }
 
-            operator const char*() const { return buffer; }
+            constexpr operator const char*() const { return buffer; }
+
+        private:
+            static constexpr void esc(uint8_t c, char* out, char delimiter) noexcept
+            {
+                out[0] = '0' + c / 100;
+                out[1] = '0' + c / 10 % 10;
+                out[2] = '0' + c % 10;
+                out[3] = delimiter;
+            }
         };
     }
 
@@ -341,25 +366,25 @@ namespace termcolor
     }
 
     inline
-    __color_index_8bit color(uint8_t index)
+    constexpr __color_index_8bit color(uint8_t index)
     {
         return { index, /* .foreground = */ true };
     }
 
     inline
-    __color_rgb_24bit color(uint8_t red, uint8_t green, uint8_t blue)
+    constexpr __color_rgb_24bit color(uint8_t red, uint8_t green, uint8_t blue)
     {
         return { red, green, blue, /* .foreground = */ true };
     }
 
     inline
-    __color_index_8bit on_color(uint8_t index)
+    constexpr __color_index_8bit on_color(uint8_t index)
     {
         return { index, /* .foregound = */ false };
     }
 
     inline
-    __color_rgb_24bit on_color(uint8_t red, uint8_t green, uint8_t blue)
+    constexpr __color_rgb_24bit on_color(uint8_t red, uint8_t green, uint8_t blue)
     {
         return { red, green, blue, /* .foreground = */ false };
     }
@@ -394,7 +419,7 @@ namespace termcolor
         //! from the a given `std::ostream` object, I have to write
         //! this kind of hack.
         inline
-        FILE* get_standard_stream(const std::ostream& stream)
+        FILE* get_standard_stream(const std::ostream& stream) noexcept
         {
             if (&stream == &std::cout)
                 return stdout;

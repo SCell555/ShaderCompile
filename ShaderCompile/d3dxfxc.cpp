@@ -18,7 +18,7 @@
 
 #pragma comment( lib, "D3DCompiler" )
 
-CSharedFile::CSharedFile( std::vector<char>&& data ) : std::vector<char>( std::forward<std::vector<char>>( data ) )
+CSharedFile::CSharedFile( std::vector<char>&& data ) noexcept : std::vector<char>( std::forward<std::vector<char>>( data ) )
 {
 }
 
@@ -28,7 +28,7 @@ void FileCache::Add( const std::string& fileName, std::vector<char>&& data )
 	if ( it != m_map.end() )
 		return;
 
-	CSharedFile file( std::move( data ) );
+	CSharedFile file( std::forward<std::vector<char>>( data ) );
 	m_map.emplace( fileName, std::move( file ) );
 }
 
@@ -85,10 +85,10 @@ namespace Private
 	class CResponse final : public CmdSink::IResponse
 	{
 	public:
-		explicit CResponse( ID3DBlob* pShader, ID3DBlob* pListing, HRESULT hr );
+		explicit CResponse( ID3DBlob* pShader, ID3DBlob* pListing, HRESULT hr ) noexcept;
 		~CResponse() override;
 
-		bool Succeeded() override { return m_pShader && m_hr == S_OK; }
+		bool Succeeded() noexcept override { return m_pShader && m_hr == S_OK; }
 		size_t GetResultBufferLen() override { return Succeeded() ? m_pShader->GetBufferSize() : 0; }
 		const void* GetResultBuffer() override { return Succeeded() ? m_pShader->GetBufferPointer() : nullptr; }
 		const char* GetListing() override { return static_cast<const char*>( m_pListing ? m_pListing->GetBufferPointer() : nullptr ); }
@@ -99,7 +99,7 @@ namespace Private
 		HRESULT m_hr;
 	};
 
-	CResponse::CResponse( ID3DBlob* pShader, ID3DBlob* pListing, HRESULT hr )
+	CResponse::CResponse( ID3DBlob* pShader, ID3DBlob* pListing, HRESULT hr ) noexcept
 		: m_pShader( pShader )
 		, m_pListing( pListing )
 		, m_hr( hr )
@@ -139,7 +139,7 @@ namespace Private
 		}
 
 		if ( ppResponse )
-			*ppResponse = new CResponse( pShader, pErrorMessages, hr );
+			*ppResponse = new( std::nothrow ) CResponse( pShader, pErrorMessages, hr );
 		else
 		{
 			if ( pShader )
@@ -158,7 +158,7 @@ namespace Private
 // @param pCommand       the command in form
 //		"fxc.exe /DSHADERCOMBO=1 /DTOTALSHADERCOMBOS=4 /DCENTROIDMASK=0 /DNUMDYNAMICCOMBOS=4 /DFLAGS=0x0 /DNUM_BONES=1 /Dmain=main /Emain /Tvs_2_0 /DSHADER_MODEL_VS_2_0=1 /D_X360=1 /nologo /Foshader.o debugdrawenvmapmask_vs20.fxc>output.txt 2>&1"
 //
-void ExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, DWORD flags )
+void ExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, unsigned long flags )
 {
 	// Expect that the command passed is exactly "fxc.exe"
 	Assert( !strncmp( pCommand, s_pszCommand, s_uCommandLen ) );
@@ -188,15 +188,4 @@ void ExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, DWOR
 	// Compile the stuff
 	Private::FastShaderCompile( pszFilename, macros, szShaderModel, ppResponse, flags );
 }
-
-bool TryExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, DWORD flags )
-{
-	if ( !strncmp( pCommand, s_pszCommand, s_uCommandLen ) )
-	{
-		ExecuteCommand( pCommand, ppResponse, flags );
-		return true;
-	}
-	return false;
-}
-
-}; // namespace InterceptFxc
+} // namespace InterceptFxc

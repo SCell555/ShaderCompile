@@ -42,9 +42,9 @@ namespace r
 	static const RE2 cpp_comment( R"reg(^(.*)\/\/$)reg");
 }
 
-static std::uint32_t lzcnt( std::uint32_t n )
+static uint32_t lzcnt( uint32_t n )
 {
-	std::uint32_t r = 0;
+	uint32_t r = 0;
 	if ( n == 0 )
 		return 32;
 

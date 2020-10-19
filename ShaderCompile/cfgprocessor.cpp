@@ -18,6 +18,7 @@
 
 #include "utlbuffer.h"
 #include <algorithm>
+#include <concepts>
 #include <cstdarg>
 #include <ctime>
 #include <map>
@@ -40,7 +41,7 @@
 
 namespace clr
 {
-	static const auto grey = _internal::ansi_color( color( 200, 200, 200 ) );
+	static constexpr auto grey = _internal::ansi_color( color( 200, 200, 200 ) );
 }
 
 namespace PreprocessorDbg
@@ -63,10 +64,10 @@ public:
 	}
 
 public:
-	[[nodiscard]] const char* Name() const { return m_sName.c_str(); }
-	[[nodiscard]] int Min() const { return m_min; }
-	[[nodiscard]] int Max() const { return m_max; }
-	[[nodiscard]] bool IsStatic() const { return m_bStatic; }
+	[[nodiscard]] const char* Name() const noexcept { return m_sName.c_str(); }
+	[[nodiscard]] int Min() const noexcept { return m_min; }
+	[[nodiscard]] int Max() const noexcept { return m_max; }
+	[[nodiscard]] bool IsStatic() const noexcept { return m_bStatic; }
 
 protected:
 	std::string m_sName;
@@ -83,27 +84,27 @@ protected:
 class IEvaluationContext
 {
 public:
-	virtual ~IEvaluationContext()									= default;
-	virtual int GetVariableValue( int nSlot ) const					= 0;
-	virtual char const* GetVariableName( int nSlot ) const			= 0;
-	virtual int GetVariableSlot( char const* szVariableName ) const	= 0;
+	virtual ~IEvaluationContext()												= default;
+	virtual int GetVariableValue( int nSlot ) const noexcept					= 0;
+	virtual char const* GetVariableName( int nSlot ) const noexcept				= 0;
+	virtual int GetVariableSlot( char const* szVariableName ) const noexcept	= 0;
 };
 
 class IExpression
 {
 public:
-	virtual ~IExpression()										= default;
-	virtual int Evaluate( IEvaluationContext* pCtx ) const		= 0;
-	virtual void Print( const IEvaluationContext* pCtx ) const	= 0;
+	virtual ~IExpression()												= default;
+	virtual int Evaluate( const IEvaluationContext* pCtx ) const noexcept		= 0;
+	virtual void Print( const IEvaluationContext* pCtx ) const			= 0;
 };
 
-#define EVAL int Evaluate( [[maybe_unused]] IEvaluationContext* pCtx ) const override
+#define EVAL int Evaluate( [[maybe_unused]] const IEvaluationContext* pCtx ) const noexcept override
 #define PRNT void Print( [[maybe_unused]] const IEvaluationContext* pCtx ) const override
 
 class CExprConstant : public IExpression
 {
 public:
-	CExprConstant( int value ) : m_value( value ) {}
+	CExprConstant( int value ) noexcept : m_value( value ) {}
 	EVAL { return m_value; }
 	PRNT
 	{
@@ -117,7 +118,7 @@ private:
 class CExprVariable : public IExpression
 {
 public:
-	CExprVariable( int nSlot ) : m_nSlot( nSlot ) {}
+	CExprVariable( int nSlot ) noexcept : m_nSlot( nSlot ) {}
 	EVAL { return m_nSlot >= 0 ? pCtx->GetVariableValue( m_nSlot ) : 0; };
 	PRNT
 	{
@@ -163,12 +164,12 @@ END_EXPR_UNARY()
 class CExprBinary : public IExpression
 {
 public:
-	CExprBinary( IExpression* x = nullptr, IExpression* y = nullptr ) : m_x( x ), m_y( y ) {}
-	[[nodiscard]] virtual int Priority() const = 0;
+	CExprBinary( IExpression* x = nullptr, IExpression* y = nullptr ) noexcept : m_x( x ), m_y( y ) {}
+	[[nodiscard]] virtual int Priority() const noexcept = 0;
 
-	void SetX( IExpression* x ) { m_x = x; }
-	void SetY( IExpression* y ) { m_y = y; }
-	IExpression* GetY() const { return m_y; }
+	void SetX( IExpression* x ) noexcept { m_x = x; }
+	void SetY( IExpression* y ) noexcept { m_y = y; }
+	IExpression* GetY() const noexcept { return m_y; }
 
 protected:
 	IExpression* m_x;
@@ -181,7 +182,7 @@ protected:
 	public:                                         \
 		using CExprBinary::CExprBinary;
 
-#define EXPR_BINARY_PRIORITY( nPriority ) int Priority() const override { return nPriority; }
+#define EXPR_BINARY_PRIORITY( nPriority ) int Priority() const noexcept override { return nPriority; }
 #define END_EXPR_BINARY() };
 
 BEGIN_EXPR_BINARY( CExprBinary_And )
@@ -315,7 +316,7 @@ END_EXPR_BINARY()
 class CComplexExpression : public IExpression
 {
 public:
-	CComplexExpression( IEvaluationContext* pCtx )
+	CComplexExpression( IEvaluationContext* pCtx ) noexcept
 		: m_pRoot( nullptr ), m_pContext( pCtx )
 		, m_pDefTrue( nullptr ), m_pDefFalse( nullptr )
 	{
@@ -323,7 +324,7 @@ public:
 	~CComplexExpression() override { Clear(); }
 
 	void Parse( char const* szExpression );
-	void Clear();
+	void Clear() noexcept;
 
 public:
 	EVAL { return m_pRoot ? m_pRoot->Evaluate( pCtx ? pCtx : m_pContext ) : 0; }
@@ -340,15 +341,17 @@ public:
 protected:
 	IExpression* ParseTopLevel( char*& szExpression );
 	IExpression* ParseInternal( char*& szExpression );
-	IExpression* Allocated( IExpression* pExpression );
-	IExpression* AbortedParse( char*& szExpression ) const
+	template <typename T, typename... Args, typename = std::void_t<decltype( T( std::declval<Args>()... ) )>>
+		requires std::derived_from<T, IExpression>
+	T* Expression( Args&&... args );
+	IExpression* AbortedParse( char* &szExpression ) const noexcept
 	{
 		*szExpression = 0;
 		return m_pDefFalse;
 	}
 
 protected:
-	std::vector<IExpression*> m_arrAllExpressions;
+	std::vector<std::unique_ptr<IExpression>> m_arrAllExpressions;
 	IExpression* m_pRoot;
 	IEvaluationContext* m_pContext;
 
@@ -356,29 +359,38 @@ protected:
 	IExpression* m_pDefFalse;
 };
 
+#undef BEGIN_EXPR_UNARY
+#undef BEGIN_EXPR_BINARY
+
+#undef END_EXPR_UNARY
+#undef END_EXPR_BINARY
+
+#undef EVAL
+#undef PRNT
+
 void CComplexExpression::Parse( char const* szExpression )
 {
 	Clear();
 
-	m_pDefTrue  = Allocated( new CExprConstant( 1 ) );
-	m_pDefFalse = Allocated( new CExprConstant( 0 ) );
+	m_pDefTrue  = Expression<CExprConstant>( 1 );
+	m_pDefFalse = Expression<CExprConstant>( 0 );
 
 	m_pRoot = m_pDefFalse;
 
 	if ( szExpression )
 	{
 		std::string qs( szExpression );
-		char* expression  = qs.data();
-		char* szExpectEnd = expression + qs.length();
-		char* szParse     = expression;
-		m_pRoot           = ParseTopLevel( szParse );
+		char* expression		= qs.data();
+		char* const szExpectEnd	= expression + qs.length();
+		char* szParse			= expression;
+		m_pRoot					= ParseTopLevel( szParse );
 
 		if ( szParse != szExpectEnd )
 			m_pRoot = m_pDefFalse;
 	}
 }
 
-IExpression* CComplexExpression::ParseTopLevel( char*& szExpression )
+IExpression* CComplexExpression::ParseTopLevel( char* &szExpression )
 {
 	std::vector<CExprBinary*> exprStack;
 	IExpression* pFirstToken = ParseInternal( szExpression );
@@ -398,48 +410,47 @@ IExpression* CComplexExpression::ParseTopLevel( char*& szExpression )
 
 		if ( !strncmp( szExpression, "&&", 2 ) )
 		{
-			pBinaryExpression = new CExprBinary_And();
+			pBinaryExpression = Expression<CExprBinary_And>();
 			szExpression += 2;
 		}
 		else if ( !strncmp( szExpression, "||", 2 ) )
 		{
-			pBinaryExpression = new CExprBinary_Or();
+			pBinaryExpression = Expression<CExprBinary_Or>();
 			szExpression += 2;
 		}
 		else if ( !strncmp( szExpression, ">=", 2 ) )
 		{
-			pBinaryExpression = new CExprBinary_Ge();
+			pBinaryExpression = Expression<CExprBinary_Ge>();
 			szExpression += 2;
 		}
 		else if ( !strncmp( szExpression, "<=", 2 ) )
 		{
-			pBinaryExpression = new CExprBinary_Le();
+			pBinaryExpression = Expression<CExprBinary_Le>();
 			szExpression += 2;
 		}
 		else if ( !strncmp( szExpression, "==", 2 ) )
 		{
-			pBinaryExpression = new CExprBinary_Eq();
+			pBinaryExpression = Expression<CExprBinary_Eq>();
 			szExpression += 2;
 		}
 		else if ( !strncmp( szExpression, "!=", 2 ) )
 		{
-			pBinaryExpression = new CExprBinary_Neq();
+			pBinaryExpression = Expression<CExprBinary_Neq>();
 			szExpression += 2;
 		}
 		else if ( *szExpression == '>' )
 		{
-			pBinaryExpression = new CExprBinary_G();
+			pBinaryExpression = Expression<CExprBinary_G>();
 			++szExpression;
 		}
 		else if ( *szExpression == '<' )
 		{
-			pBinaryExpression = new CExprBinary_L();
+			pBinaryExpression = Expression<CExprBinary_L>();
 			++szExpression;
 		}
 		else
 			return AbortedParse( szExpression );
 
-		Allocated( pBinaryExpression );
 		pBinaryExpression->SetY( ParseInternal( szExpression ) );
 
 		// Figure out the expression priority
@@ -481,7 +492,7 @@ IExpression* CComplexExpression::ParseTopLevel( char*& szExpression )
 	}
 }
 
-IExpression* CComplexExpression::ParseInternal( char*& szExpression )
+IExpression* CComplexExpression::ParseInternal( char* &szExpression )
 {
 	// Skip whitespace
 	while ( *szExpression && isspace( *szExpression ) )
@@ -493,13 +504,13 @@ IExpression* CComplexExpression::ParseInternal( char*& szExpression )
 	if ( isdigit( *szExpression ) )
 	{
 		const int lValue = strtol( szExpression, &szExpression, 10 );
-		return Allocated( new CExprConstant( lValue ) );
+		return Expression<CExprConstant>( lValue );
 	}
 	else if ( !strncmp( szExpression, "defined", 7 ) )
 	{
 		szExpression += 7;
 		IExpression* pNext = ParseInternal( szExpression );
-		return Allocated( new CExprConstant( pNext->Evaluate( m_pContext ) ) );
+		return Expression<CExprConstant>( pNext->Evaluate( m_pContext ) );
 	}
 	else if ( *szExpression == '(' )
 	{
@@ -534,40 +545,31 @@ IExpression* CComplexExpression::ParseInternal( char*& szExpression )
 		const int nSlot = m_pContext->GetVariableSlot( std::string( szExpression + 1, lenVariable ).c_str() );
 		szExpression += lenVariable + 1;
 
-		return Allocated( new CExprVariable( nSlot ) );
+		return Expression<CExprVariable>( nSlot );
 	}
 	else if ( *szExpression == '!' )
 	{
 		++szExpression;
 		IExpression* pNext = ParseInternal( szExpression );
-		return Allocated( new CExprUnary_Negate( pNext ) );
+		return Expression<CExprUnary_Negate>( pNext );
 	}
 
 	return AbortedParse( szExpression );
 }
 
-IExpression* CComplexExpression::Allocated( IExpression* pExpression )
+template <typename T, typename... Args, typename>
+	requires std::derived_from<T, IExpression>
+T* CComplexExpression::Expression( Args&&... args )
 {
-	m_arrAllExpressions.emplace_back( pExpression );
-	return pExpression;
+	m_arrAllExpressions.emplace_back( std::make_unique<T>( std::forward<Args>( args )... ) );
+	return static_cast<T*>( m_arrAllExpressions.back().get() );
 }
 
-void CComplexExpression::Clear()
+void CComplexExpression::Clear() noexcept
 {
-	std::for_each( m_arrAllExpressions.begin(), m_arrAllExpressions.end(), std::default_delete<IExpression>() );
-
 	m_arrAllExpressions.clear();
 	m_pRoot = nullptr;
 }
-
-#undef BEGIN_EXPR_UNARY
-#undef BEGIN_EXPR_BINARY
-
-#undef END_EXPR_UNARY
-#undef END_EXPR_BINARY
-
-#undef EVAL
-#undef PRNT
 
 //////////////////////////////////////////////////////////////////////////
 //
@@ -583,17 +585,17 @@ public:
 	ComboGenerator( ComboGenerator&& old ) noexcept : m_arrDefines( std::move( old.m_arrDefines ) ), m_mapDefines( std::move( old.m_mapDefines ) ), m_arrVarSlots( std::move( old.m_arrVarSlots ) ) {}
 
 	void AddDefine( Define const& df );
-	[[nodiscard]] Define const* GetDefinesBase() const { return m_arrDefines.data(); }
-	[[nodiscard]] Define const* GetDefinesEnd() const { return m_arrDefines.data() + m_arrDefines.size(); }
+	[[nodiscard]] Define const* GetDefinesBase() const noexcept { return m_arrDefines.data(); }
+	[[nodiscard]] Define const* GetDefinesEnd() const noexcept { return m_arrDefines.data() + m_arrDefines.size(); }
 
-	[[nodiscard]] uint64_t NumCombos() const;
-	[[nodiscard]] uint64_t NumCombos( bool bStaticCombos ) const;
+	[[nodiscard]] uint64_t NumCombos() const noexcept;
+	[[nodiscard]] uint64_t NumCombos( bool bStaticCombos ) const noexcept;
 
 	// IEvaluationContext
 public:
-	[[nodiscard]] int GetVariableValue( int nSlot ) const override { return m_arrVarSlots[nSlot]; }
-	[[nodiscard]] char const* GetVariableName( int nSlot ) const override { return m_arrDefines[nSlot].Name(); }
-	[[nodiscard]] int GetVariableSlot( char const* szVariableName ) const override
+	[[nodiscard]] int GetVariableValue( int nSlot ) const noexcept override { return m_arrVarSlots[nSlot]; }
+	[[nodiscard]] char const* GetVariableName( int nSlot ) const noexcept override { return m_arrDefines[nSlot].Name(); }
+	[[nodiscard]] int GetVariableSlot( char const* szVariableName ) const noexcept override
 	{
 		const auto& find = m_mapDefines.find( szVariableName );
 		if ( m_mapDefines.end() != find )
@@ -614,18 +616,18 @@ void ComboGenerator::AddDefine( Define const& df )
 	m_arrVarSlots.emplace_back( 1 );
 }
 
-uint64_t ComboGenerator::NumCombos() const
+uint64_t ComboGenerator::NumCombos() const noexcept
 {
 	return std::transform_reduce( m_arrDefines.cbegin(), m_arrDefines.cend(), 1ULL,
-		[]( const uint64_t& a, const uint64_t& b ) { return a * b; },
-		[]( const Define& d ) { return static_cast<uint64_t>( d.Max() ) - d.Min() + 1ULL; } );
+		[]( const uint64_t& a, const uint64_t& b ) noexcept { return a * b; },
+		[]( const Define& d ) noexcept { return static_cast<uint64_t>( d.Max() ) - d.Min() + 1ULL; } );
 }
 
-uint64_t ComboGenerator::NumCombos( bool bStaticCombos ) const
+uint64_t ComboGenerator::NumCombos( bool bStaticCombos ) const noexcept
 {
 	return std::transform_reduce( m_arrDefines.cbegin(), m_arrDefines.cend(), 1ULL,
-		[]( const uint64_t& a, const uint64_t& b ) { return a * b; },
-		[bStaticCombos]( const Define& d ) { return d.IsStatic() == bStaticCombos ? static_cast<uint64_t>( d.Max() ) - d.Min() + 1ULL : 1ULL; } );
+		[]( const uint64_t& a, const uint64_t& b ) noexcept { return a * b; },
+		[bStaticCombos]( const Define& d ) noexcept { return d.IsStatic() == bStaticCombos ? static_cast<uint64_t>( d.Max() ) - d.Min() + 1ULL : 1ULL; } );
 }
 
 extern std::string g_pShaderPath;
@@ -635,19 +637,19 @@ namespace ConfigurationProcessing
 class CfgEntry
 {
 public:
-	CfgEntry() : m_szName( "" ), m_szShaderSrc( "" ), m_pCg( nullptr ), m_pExpr( nullptr )
+	CfgEntry() noexcept : m_szName( "" ), m_szShaderSrc( "" ), m_pCg( nullptr ), m_pExpr( nullptr )
 	{
 		memset( &m_eiInfo, 0, sizeof( m_eiInfo ) );
 	}
 
-	static void Destroy( CfgEntry const& x )
+	static void Destroy( CfgEntry const& x ) noexcept
 	{
 		delete x.m_pCg;
 		delete x.m_pExpr;
 	}
 
 public:
-	bool operator<( CfgEntry const& x ) const { return m_pCg->NumCombos() < x.m_pCg->NumCombos(); }
+	bool operator<( const CfgEntry& x ) const noexcept { return m_pCg->NumCombos() < x.m_pCg->NumCombos(); }
 
 public:
 	char const* m_szName;
@@ -667,28 +669,29 @@ public:
 	uint64_t m_iTotalCommand;
 	uint64_t m_iComboNumber;
 	uint64_t m_numCombos;
-	CfgEntry const* m_pEntry;
+	const CfgEntry* m_pEntry;
 
 public:
-	ComboHandleImpl() : m_iTotalCommand( 0 ), m_iComboNumber( 0 ), m_numCombos( 0 ), m_pEntry( nullptr ) {}
+	ComboHandleImpl() noexcept : m_iTotalCommand( 0 ), m_iComboNumber( 0 ), m_numCombos( 0 ), m_pEntry( nullptr ) {}
+	ComboHandleImpl( const ComboHandleImpl& ) = default;
 
 	// IEvaluationContext
 private:
 	std::vector<int> m_arrVarSlots;
 
 public:
-	int GetVariableValue( int nSlot ) const override { return m_arrVarSlots[nSlot]; }
-	char const* GetVariableName( int nSlot ) const override { return m_pEntry->m_pCg->GetVariableName( nSlot ); }
-	int GetVariableSlot( char const* szVariableName ) const override { return m_pEntry->m_pCg->GetVariableSlot( szVariableName ); }
+	int GetVariableValue( int nSlot ) const noexcept override { return m_arrVarSlots[nSlot]; }
+	char const* GetVariableName( int nSlot ) const noexcept override { return m_pEntry->m_pCg->GetVariableName( nSlot ); }
+	int GetVariableSlot( char const* szVariableName ) const noexcept override { return m_pEntry->m_pCg->GetVariableSlot( szVariableName ); }
 
 	// External implementation
 public:
 	bool Initialize( uint64_t iTotalCommand, const CfgEntry* pEntry );
-	bool AdvanceCommands( uint64_t& riAdvanceMore );
-	bool NextNotSkipped( uint64_t iTotalCommand );
-	bool IsSkipped() { return m_pEntry->m_pExpr->Evaluate( this ) != 0; }
-	void FormatCommand( std::span<char> pchBuffer );
-	void FormatCommandHumanReadable( std::span<char> pchBuffer );
+	bool AdvanceCommands( uint64_t& riAdvanceMore ) noexcept;
+	bool NextNotSkipped( uint64_t iTotalCommand ) noexcept;
+	bool IsSkipped() const noexcept { return m_pEntry->m_pExpr->Evaluate( this ) != 0; }
+	void FormatCommand( std::span<char> pchBuffer ) const;
+	void FormatCommandHumanReadable( std::span<char> pchBuffer ) const;
 };
 
 static std::map<uint64_t, ComboHandleImpl> s_mapComboCommands;
@@ -704,14 +707,14 @@ bool ComboHandleImpl::Initialize( uint64_t iTotalCommand, const CfgEntry* pEntry
 	Define const* const pDefVarsEnd = m_pEntry->m_pCg->GetDefinesEnd();
 
 	// Set all the variables to max values
-	for ( Define const* pSetDef = pDefVars; pSetDef < pDefVarsEnd; ++pSetDef )
+	for ( const Define* pSetDef = pDefVars; pSetDef < pDefVarsEnd; ++pSetDef )
 		m_arrVarSlots.emplace_back( pSetDef->Max() );
 
 	m_iComboNumber = m_numCombos - 1;
 	return true;
 }
 
-bool ComboHandleImpl::AdvanceCommands( uint64_t& riAdvanceMore )
+bool ComboHandleImpl::AdvanceCommands( uint64_t& riAdvanceMore ) noexcept
 {
 	if ( !riAdvanceMore )
 		return true;
@@ -740,14 +743,14 @@ bool ComboHandleImpl::AdvanceCommands( uint64_t& riAdvanceMore )
 		*pSetValues = pSetDef->Max();
 
 		const int iInterval = ( pSetDef->Max() - pSetDef->Min() + 1 );
-		*pSetValues -= int( riAdvanceMore % iInterval );
+		*pSetValues -= static_cast<int>( riAdvanceMore % iInterval );
 		riAdvanceMore /= iInterval;
 	}
 
 	return true;
 }
 
-bool ComboHandleImpl::NextNotSkipped( uint64_t iTotalCommand )
+bool ComboHandleImpl::NextNotSkipped( uint64_t iTotalCommand ) noexcept
 {
 	// Get the pointers
 	int* const pnValues    = m_arrVarSlots.data();
@@ -755,38 +758,36 @@ bool ComboHandleImpl::NextNotSkipped( uint64_t iTotalCommand )
 	int* pSetValues;
 
 	// Defines
-	Define const* const pDefVars = m_pEntry->m_pCg->GetDefinesBase();
-	Define const* pSetDef;
+	const Define* const pDefVars = m_pEntry->m_pCg->GetDefinesBase();
+	const Define* pSetDef;
 
 	// Go ahead and run the iterations
-	{
-	next_combo_iteration:
-		if ( m_iTotalCommand + 1 >= iTotalCommand || !m_iComboNumber )
-			return false;
-
-		--m_iComboNumber;
-		++m_iTotalCommand;
-
-		// Do a next iteration
-		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd; ++pSetValues, ++pSetDef )
-		{
-			if ( --*pSetValues >= pSetDef->Min() )
-				goto have_combo_iteration;
-
-			*pSetValues = pSetDef->Max();
-		}
-
+next_combo_iteration:
+	if ( m_iTotalCommand + 1 >= iTotalCommand || !m_iComboNumber )
 		return false;
 
-	have_combo_iteration:
-		if ( m_pEntry->m_pExpr->Evaluate( this ) )
-			goto next_combo_iteration;
+	--m_iComboNumber;
+	++m_iTotalCommand;
 
-		return true;
+	// Do a next iteration
+	for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd; ++pSetValues, ++pSetDef )
+	{
+		if ( --*pSetValues >= pSetDef->Min() )
+			goto have_combo_iteration;
+
+		*pSetValues = pSetDef->Max();
 	}
+
+	return false;
+
+have_combo_iteration:
+	if ( m_pEntry->m_pExpr->Evaluate( this ) )
+		goto next_combo_iteration;
+
+	return true;
 }
 
-void ComboHandleImpl::FormatCommand( std::span<char> pchBuffer )
+void ComboHandleImpl::FormatCommand( std::span<char> pchBuffer ) const
 {
 	// Get the pointers
 	const int* const pnValues    = m_arrVarSlots.data();
@@ -794,38 +795,36 @@ void ComboHandleImpl::FormatCommand( std::span<char> pchBuffer )
 	const int* pSetValues;
 
 	// Defines
-	Define const* const pDefVars = m_pEntry->m_pCg->GetDefinesBase();
-	Define const* const pDefVarsEnd = m_pEntry->m_pCg->GetDefinesEnd();
-	Define const* pSetDef;
+	const Define* const pDefVars = m_pEntry->m_pCg->GetDefinesBase();
+	const Define* const pDefVarsEnd = m_pEntry->m_pCg->GetDefinesEnd();
+	const Define* pSetDef;
 
+	// ------- OnCombo( nCurrentCombo ); ----------
+	int o = sprintf_s( pchBuffer.data(), pchBuffer.size(), "command" ) + 1;
+	o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", m_pEntry->m_szShaderSrc ) + 1;
+	o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", m_pEntry->m_eiInfo.m_szShaderVersion ) + 1;
+
+	o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "SHADERCOMBO" ) + 1;
+	o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%llx", m_iComboNumber ) + 1;
+
+	char version[20];
+	strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion );
+	_strupr_s( version );
+	o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "SHADER_MODEL_%s", version ) + 1;
+	o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "1" ) + 1;
+
+	for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd && pDefVars < pDefVarsEnd; ++pSetValues, ++pSetDef )
 	{
-		// ------- OnCombo( nCurrentCombo ); ----------
-		int o = sprintf_s( pchBuffer.data(), pchBuffer.size(), "command" ) + 1;
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", m_pEntry->m_szShaderSrc ) + 1;
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", m_pEntry->m_eiInfo.m_szShaderVersion ) + 1;
-
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "SHADERCOMBO" ) + 1;
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%llx", m_iComboNumber ) + 1;
-
-		char version[20];
-		strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion );
-		_strupr_s( version );
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "SHADER_MODEL_%s", version ) + 1;
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "1" ) + 1;
-
-		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd && pDefVars < pDefVarsEnd; ++pSetValues, ++pSetDef )
-		{
-			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", pSetDef->Name() ) + 1;
-			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%d", *pSetValues ) + 1;
-		}
-
-		pchBuffer[o] = '\0';
-		pchBuffer[o + 1LL] = '\0';
-		// ------- end of OnCombo ---------------------
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%s", pSetDef->Name() ) + 1;
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, "%d", *pSetValues ) + 1;
 	}
+
+	pchBuffer[o] = '\0';
+	pchBuffer[o + 1LL] = '\0';
+	// ------- end of OnCombo ---------------------
 }
 
-void ComboHandleImpl::FormatCommandHumanReadable( std::span<char> pchBuffer )
+void ComboHandleImpl::FormatCommandHumanReadable( std::span<char> pchBuffer ) const
 {
 	// Get the pointers
 	const int* const pnValues    = m_arrVarSlots.data();
@@ -833,27 +832,25 @@ void ComboHandleImpl::FormatCommandHumanReadable( std::span<char> pchBuffer )
 	const int* pSetValues;
 
 	// Defines
-	Define const* const pDefVars    = m_pEntry->m_pCg->GetDefinesBase();
-	Define const* const pDefVarsEnd = m_pEntry->m_pCg->GetDefinesEnd();
-	Define const* pSetDef;
+	const Define* const pDefVars    = m_pEntry->m_pCg->GetDefinesBase();
+	const Define* const pDefVarsEnd = m_pEntry->m_pCg->GetDefinesEnd();
+	const Define* pSetDef;
 
-	{
-		// ------- OnCombo( nCurrentCombo ); ----------
-		char version[20];
-		strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion );
-		_strupr_s( version );
-		int o = sprintf_s( pchBuffer.data(), pchBuffer.size(),
-			"fxc.exe /DCENTROIDMASK=%d /DSHADERCOMBO=%llx /DSHADER_MODEL_%s=1 /T%s /Emain",
-			m_pEntry->m_eiInfo.m_nCentroidMask, m_iComboNumber, version, m_pEntry->m_eiInfo.m_szShaderVersion );
+	// ------- OnCombo( nCurrentCombo ); ----------
+	char version[20];
+	strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion );
+	_strupr_s( version );
+	int o = sprintf_s( pchBuffer.data(), pchBuffer.size(),
+		"fxc.exe /DCENTROIDMASK=%d /DSHADERCOMBO=%llx /DSHADER_MODEL_%s=1 /T%s /Emain",
+		m_pEntry->m_eiInfo.m_nCentroidMask, m_iComboNumber, version, m_pEntry->m_eiInfo.m_szShaderVersion );
 
-		for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd && pDefVars < pDefVarsEnd; ++pSetValues, ++pSetDef )
-			o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, " /D%s=%d", pSetDef->Name(), *pSetValues );
+	for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd && pDefVars < pDefVarsEnd; ++pSetValues, ++pSetDef )
+		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, " /D%s=%d", pSetDef->Name(), *pSetValues );
 
-		o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, " %s", m_pEntry->m_szShaderSrc );
-		// ------- end of OnCombo ---------------------
+	o += sprintf_s( &pchBuffer[o], pchBuffer.size() - o, " %s", m_pEntry->m_szShaderSrc );
+	// ------- end of OnCombo ---------------------
 
-		pchBuffer[o] = '\0';
-	}
+	pchBuffer[o] = '\0';
 }
 
 static struct CAutoDestroyEntries
@@ -865,7 +862,7 @@ static struct CAutoDestroyEntries
 } s_autoDestroyEntries;
 
 
-static std::map<std::string, std::array<std::string, 2>> shaderVersionMapping =
+static robin_hood::unordered_flat_map<std::string, std::array<std::string, 2>> shaderVersionMapping =
 {
 	{ "20b", { "ps_2_b", "vs_2_0" } },
 	{ "30", { "ps_3_0", "vs_3_0" } },
@@ -877,7 +874,7 @@ static std::map<std::string, std::array<std::string, 2>> shaderVersionMapping =
 
 static int FastToLower( char c )
 {
-	int i = (unsigned char)c;
+	int i = gsl::narrow_cast<unsigned char>( c );
 	if ( i < 0x80 )
 		// Brutally fast branchless ASCII tolower():
 		i += ( ( ( ( 'A' - 1 ) - i ) & ( i - ( 'Z' + 1 ) ) ) >> 26 ) & 0x20;
@@ -889,7 +886,7 @@ static int FastToLower( char c )
 static char const* V_stristr( char const* pStr, char const* pSearch )
 {
 	if ( !pStr || !pSearch )
-		return 0;
+		return nullptr;
 
 	char const* pLetter = pStr;
 
@@ -897,7 +894,7 @@ static char const* V_stristr( char const* pStr, char const* pSearch )
 	while ( *pLetter != 0 )
 	{
 		// Skip over non-matches
-		if ( FastToLower( (unsigned char)*pLetter ) == FastToLower( (unsigned char)*pSearch ) )
+		if ( FastToLower( gsl::narrow_cast<unsigned char>( *pLetter ) ) == FastToLower( gsl::narrow_cast<unsigned char>( *pSearch ) ) )
 		{
 			// Check for match
 			char const* pMatch = pLetter + 1;
@@ -906,9 +903,9 @@ static char const* V_stristr( char const* pStr, char const* pSearch )
 			{
 				// We've run off the end; don't bother.
 				if ( *pMatch == 0 )
-					return 0;
+					return nullptr;
 
-				if ( FastToLower( (unsigned char)*pMatch ) != FastToLower( (unsigned char)*pTest ) )
+				if ( FastToLower( gsl::narrow_cast<unsigned char>( *pMatch ) ) != FastToLower( gsl::narrow_cast<unsigned char>( *pTest ) ) )
 					break;
 
 				++pMatch;
@@ -923,7 +920,7 @@ static char const* V_stristr( char const* pStr, char const* pSearch )
 		++pLetter;
 	}
 
-	return 0;
+	return nullptr;
 }
 
 void SetupConfigurationDirect( const std::string& name, const std::string& version, uint32_t centroidMask,
@@ -1152,11 +1149,11 @@ static void ProcessConfiguration( const char* pConfigFile )
 namespace CfgProcessor
 {
 using CPCHI_t = ConfigurationProcessing::ComboHandleImpl;
-static CPCHI_t* FromHandle( ComboHandle hCombo )
+static CPCHI_t* FromHandle( ComboHandle hCombo ) noexcept
 {
 	return reinterpret_cast<CPCHI_t*>( hCombo );
 }
-static ComboHandle AsHandle( CPCHI_t* pImpl )
+static ComboHandle AsHandle( CPCHI_t* pImpl ) noexcept
 {
 	return reinterpret_cast<ComboHandle>( pImpl );
 }
@@ -1168,15 +1165,14 @@ void ReadConfiguration( const char* configFile )
 
 void DescribeConfiguration( std::unique_ptr<CfgEntryInfo[]>& rarrEntries )
 {
-	rarrEntries.reset( new CfgEntryInfo[ConfigurationProcessing::s_setEntries.size() + 1] );
+	rarrEntries = std::make_unique<CfgEntryInfo[]>( ConfigurationProcessing::s_setEntries.size() + 1 );
 
 	CfgEntryInfo* pInfo    = rarrEntries.get();
 	uint64_t nCurrentCommand = 0;
 
 	for ( auto it = ConfigurationProcessing::s_setEntries.rbegin(), itEnd = ConfigurationProcessing::s_setEntries.rend(); it != itEnd; ++it, ++pInfo )
 	{
-		const ConfigurationProcessing::CfgEntry& f = *it;
-		ConfigurationProcessing::CfgEntry const& e = *it;
+		const ConfigurationProcessing::CfgEntry& e = *it;
 		*pInfo = e.m_eiInfo;
 
 		pInfo->m_iCommandStart    = nCurrentCommand;
@@ -1248,7 +1244,7 @@ ComboHandle Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint
 		// Find earlier command
 		uint64_t iCommandFound = riCommandNumber;
 		const CPCHI_t emptyCPCHI;
-		CPCHI_t const& chiFound = GetLessOrEq( iCommandFound, emptyCPCHI );
+		const CPCHI_t& chiFound = GetLessOrEq( iCommandFound, emptyCPCHI );
 
 		if ( !chiFound.m_pEntry || !chiFound.m_pEntry->m_pCg || !chiFound.m_pEntry->m_pExpr || chiFound.m_iTotalCommand < 0 || chiFound.m_iTotalCommand > riCommandNumber )
 			return nullptr;
@@ -1292,7 +1288,7 @@ ComboHandle Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint
 		// Retrieve the next combo handle data
 		uint64_t iCommandLookup = riCommandNumber;
 		CPCHI_t emptyCPCHI;
-		CPCHI_t const& chiNext = GetLessOrEq( iCommandLookup, emptyCPCHI );
+		const CPCHI_t& chiNext = GetLessOrEq( iCommandLookup, emptyCPCHI );
 		Assert( iCommandLookup == riCommandNumber && ( chiNext.m_pEntry ) );
 
 		// Set up the new combo handle
@@ -1306,42 +1302,42 @@ ComboHandle Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint
 
 void Combo_FormatCommand( ComboHandle hCombo, std::span<char> pchBuffer )
 {
-	CPCHI_t* pImpl = FromHandle( hCombo );
+	const auto pImpl = FromHandle( hCombo );
 	pImpl->FormatCommand( pchBuffer );
 }
 
 void Combo_FormatCommandHumanReadable( ComboHandle hCombo, std::span<char> pchBuffer )
 {
-	CPCHI_t* pImpl = FromHandle( hCombo );
+	const auto pImpl = FromHandle( hCombo );
 	pImpl->FormatCommandHumanReadable( pchBuffer );
 }
 
-uint64_t Combo_GetCommandNum( ComboHandle hCombo )
+uint64_t Combo_GetCommandNum( ComboHandle hCombo ) noexcept
 {
-	if ( CPCHI_t* pImpl = FromHandle( hCombo ) )
+	if ( const auto pImpl = FromHandle( hCombo ) )
 		return pImpl->m_iTotalCommand;
 	return ~0ULL;
 }
 
-uint64_t Combo_GetComboNum( ComboHandle hCombo )
+uint64_t Combo_GetComboNum( ComboHandle hCombo ) noexcept
 {
-	if ( CPCHI_t* pImpl = FromHandle( hCombo ) )
+	if ( const auto pImpl = FromHandle( hCombo ) )
 		return pImpl->m_iComboNumber;
 	return ~0ULL;
 }
 
-CfgEntryInfo const* Combo_GetEntryInfo( ComboHandle hCombo )
+const CfgEntryInfo* Combo_GetEntryInfo( ComboHandle hCombo ) noexcept
 {
-	if ( CPCHI_t* pImpl = FromHandle( hCombo ) )
+	if ( const auto pImpl = FromHandle( hCombo ) )
 		return &pImpl->m_pEntry->m_eiInfo;
 	return nullptr;
 }
 
-ComboHandle Combo_Alloc( ComboHandle hComboCopyFrom )
+ComboHandle Combo_Alloc( ComboHandle hComboCopyFrom ) noexcept
 {
 	if ( hComboCopyFrom )
 		return AsHandle( new CPCHI_t( *FromHandle( hComboCopyFrom ) ) );
-	return AsHandle( new CPCHI_t );
+	return AsHandle( new( std::nothrow ) CPCHI_t );
 }
 
 void Combo_Assign( ComboHandle hComboDst, ComboHandle hComboSrc )
@@ -1350,7 +1346,7 @@ void Combo_Assign( ComboHandle hComboDst, ComboHandle hComboSrc )
 	*FromHandle( hComboDst ) = *FromHandle( hComboSrc );
 }
 
-void Combo_Free( ComboHandle& rhComboFree )
+void Combo_Free( ComboHandle& rhComboFree ) noexcept
 {
 	delete FromHandle( rhComboFree );
 	rhComboFree = nullptr;

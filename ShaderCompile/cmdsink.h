@@ -26,7 +26,7 @@ class IResponse
 {
 public:
 	virtual ~IResponse() = default;
-	virtual void Release() { delete this; }
+	void Release() noexcept { delete this; }
 
 	// Returns whether the command succeeded
 	virtual bool Succeeded() = 0;
@@ -38,25 +38,6 @@ public:
 
 	// Returns a zero-terminated string of messages reported during command execution, or NULL if nothing was reported
 	virtual const char* GetListing() = 0;
-};
-
-/*
-
-Response implementation when the result is a generic error.
-
-*/
-class CResponseError final : public IResponse
-{
-public:
-	explicit CResponseError()  = default;
-	~CResponseError() override = default;
-
-	bool Succeeded() override { return false; }
-
-	size_t GetResultBufferLen() override { return 0; }
-	const void* GetResultBuffer() override { return nullptr; }
-
-	const char* GetListing() override { return nullptr; }
 };
 
 }; // namespace CmdSink
