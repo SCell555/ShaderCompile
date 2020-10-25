@@ -14,9 +14,13 @@
 
 #include "basetypes.h"
 #include "cmdsink.h"
-
 #include "robin_hood.h"
+#include <vector>
+#include <utility>
 
+#define USE_PROXY_PROCESS
+
+#ifndef USE_PROXY_PROCESS
 class CSharedFile final : private std::vector<char>
 {
 public:
@@ -44,12 +48,25 @@ protected:
 	typedef robin_hood::unordered_node_map<std::string, CSharedFile> Mapping;
 	Mapping m_map;
 };
-
 extern FileCache fileCache;
+#else
+extern void RegisterFileForCompiler( const char* fullPath, const char* regName );
+#endif
 
 namespace InterceptFxc
 {
+#ifndef USE_PROXY_PROCESS
 	void ExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, unsigned long flags );
-}; // namespace InterceptFxc
+#else
+	struct CompileData
+	{
+		const char* pszFileName;
+		const char* pszVersion;
+		std::vector<std::pair<const char*, int>> defines;
+	};
+
+	void ExecuteCommand( const CompileData& pCommand, CmdSink::IResponse** ppResponse, unsigned long flags );
+#endif
+} // namespace InterceptFxc
 
 #endif // #ifndef D3DXFXC_H

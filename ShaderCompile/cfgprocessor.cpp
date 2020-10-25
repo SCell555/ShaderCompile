@@ -35,6 +35,7 @@
 #include "termcolors.hpp"
 #include "strmanip.hpp"
 #include "shaderparser.h"
+#include "d3dxfxc.h"
 
 // Type conversions should be controlled by programmer explicitly - shadercompile makes use of 64-bit integer arithmetics
 #pragma warning( error : 4244 )
@@ -692,6 +693,7 @@ public:
 	bool IsSkipped() const noexcept { return m_pEntry->m_pExpr->Evaluate( this ) != 0; }
 	void FormatCommand( std::span<char> pchBuffer ) const;
 	void FormatCommandHumanReadable( std::span<char> pchBuffer ) const;
+	void GetCompileData( InterceptFxc::CompileData& pData ) const;
 };
 
 static std::map<uint64_t, ComboHandleImpl> s_mapComboCommands;
@@ -785,6 +787,24 @@ have_combo_iteration:
 		goto next_combo_iteration;
 
 	return true;
+}
+
+void ComboHandleImpl::GetCompileData( InterceptFxc::CompileData& pData ) const
+{
+	// Get the pointers
+	const int* const pnValues    = m_arrVarSlots.data();
+	const int* const pnValuesEnd = pnValues + m_arrVarSlots.size();
+	const int* pSetValues;
+
+	// Defines
+	const Define* const pDefVars = m_pEntry->m_pCg->GetDefinesBase();
+	const Define* const pDefVarsEnd = m_pEntry->m_pCg->GetDefinesEnd();
+	const Define* pSetDef;
+
+	pData.pszFileName = m_pEntry->m_szShaderSrc;
+	pData.pszVersion = m_pEntry->m_eiInfo.m_szShaderVersion;
+	for ( pSetValues = pnValues, pSetDef = pDefVars; pSetValues < pnValuesEnd && pDefVars < pDefVarsEnd; ++pSetValues, ++pSetDef )
+		pData.defines.emplace_back( std::make_pair( pSetDef->Name(), *pSetValues ) );
 }
 
 void ComboHandleImpl::FormatCommand( std::span<char> pchBuffer ) const
@@ -965,7 +985,11 @@ void SetupConfigurationDirect( const std::string& name, const std::string& versi
 		else
 			sprintf_s( filename, "%s\\%s", g_pShaderPath.c_str(), file.c_str() );
 
-		std::ifstream src( filename, std::ios::binary | std::ios::ate );
+		std::ifstream src( filename, std::ios::binary
+#ifndef USE_PROXY_PROCESS
+			| std::ios::ate
+#endif
+		);
 		if ( !src )
 		{
 			std::cout << clr::pinkish << "Can't find \"" << clr::red << filename << clr::pinkish << "\"" << std::endl;
@@ -982,12 +1006,16 @@ void SetupConfigurationDirect( const std::string& name, const std::string& versi
 		if ( g_bVerbose )
 			std::cout << "adding file to cache: \"" << clr::green << justFilename << clr::reset << "\"" << std::endl;
 
+#ifndef USE_PROXY_PROCESS
 		std::vector<char> data( gsl::narrow<size_t>( src.tellg() ) );
 		src.clear();
 		src.seekg( 0, std::ios::beg );
 		src.read( data.data(), data.size() );
 
 		fileCache.Add( justFilename, std::move( data ) );
+#else
+		RegisterFileForCompiler( filename, justFilename );
+#endif
 	}
 
 	uint64_t nCurrentCommand = 0;
@@ -1084,7 +1112,11 @@ static void ProcessConfiguration( const char* pConfigFile )
 			else
 				sprintf_s( filename, "%s\\%s", g_pShaderPath.c_str(), file.c_str() );
 
-			std::ifstream src( filename, std::ios::binary | std::ios::ate );
+			std::ifstream src( filename, std::ios::binary
+#ifndef USE_PROXY_PROCESS
+				| std::ios::ate
+#endif
+			);
 			if ( !src )
 			{
 				std::cout << clr::pinkish << "Can't find \"" << clr::red << filename << clr::pinkish << "\"" << std::endl;
@@ -1101,12 +1133,16 @@ static void ProcessConfiguration( const char* pConfigFile )
 			if ( g_bVerbose )
 				std::cout << "adding file to cache: \"" << clr::green << justFilename << clr::reset << "\"" << std::endl;
 
+#ifndef USE_PROXY_PROCESS
 			std::vector<char> data( gsl::narrow<size_t>( src.tellg() ) );
 			src.clear();
 			src.seekg( 0, std::ios::beg );
 			src.read( data.data(), data.size() );
 
 			fileCache.Add( justFilename, std::move( data ) );
+#else
+			RegisterFileForCompiler( filename, justFilename );
+#endif
 		}
 	}
 
@@ -1304,6 +1340,12 @@ void Combo_FormatCommand( ComboHandle hCombo, std::span<char> pchBuffer )
 {
 	const auto pImpl = FromHandle( hCombo );
 	pImpl->FormatCommand( pchBuffer );
+}
+
+void Combo_GetCompileData( ComboHandle hCombo, InterceptFxc::CompileData& pchBuffer )
+{
+	const auto pImpl = FromHandle( hCombo );
+	pImpl->GetCompileData( pchBuffer );
 }
 
 void Combo_FormatCommandHumanReadable( ComboHandle hCombo, std::span<char> pchBuffer )

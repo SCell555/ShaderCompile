@@ -13,6 +13,46 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Slice Files">
+      <UniqueIdentifier>{583a9c29-aa85-4978-89de-7ece3ea2ffb8}</UniqueIdentifier>
+      <Extensions>ice</Extensions>
+    </Filter>
+    <Filter Include="Source Files\Win32">
+      <UniqueIdentifier>{6545043c-0376-418a-8648-d5f23f59ab0e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Win32\Debug">
+      <UniqueIdentifier>{8d09cc28-aeac-4825-99dc-98816d54d8ba}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\x64">
+      <UniqueIdentifier>{a275fac6-b622-46e8-b7fb-0054e3b27497}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\x64\Debug">
+      <UniqueIdentifier>{b0e5daa4-749c-49c8-808d-1f4ce123875e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\Win32\Release">
+      <UniqueIdentifier>{5457a808-a0d8-4eac-96f7-a6f06a7b39c3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\x64\Release">
+      <UniqueIdentifier>{5fffade6-ad3e-4fb5-9dd3-7e6e040d70e5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Win32">
+      <UniqueIdentifier>{b4be9f98-152f-48a5-b2c6-9844a95ef54c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Win32\Debug">
+      <UniqueIdentifier>{a08e7b33-8ace-48b5-9115-1484abd9c249}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\x64">
+      <UniqueIdentifier>{59f2fdc9-c277-4d32-8f53-4d7d62fa0eae}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\x64\Debug">
+      <UniqueIdentifier>{ac184767-a47d-4deb-b90b-8608f388d1b6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Win32\Release">
+      <UniqueIdentifier>{7ca798b8-760a-4255-ac3e-c714b704ec35}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\x64\Release">
+      <UniqueIdentifier>{dde046ae-264a-425a-8db6-8c3266c47fdf}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ShaderCompile.cpp">
@@ -35,6 +75,18 @@
     </ClCompile>
     <ClCompile Include="shaderparser.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Debug\CompilerInterface.cpp">
+      <Filter>Source Files\Win32\Debug</Filter>
+    </ClCompile>
+    <ClCompile Include="x64\Debug\CompilerInterface.cpp">
+      <Filter>Source Files\x64\Debug</Filter>
+    </ClCompile>
+    <ClCompile Include="Release\CompilerInterface.cpp">
+      <Filter>Source Files\Win32\Release</Filter>
+    </ClCompile>
+    <ClCompile Include="x64\Release\CompilerInterface.cpp">
+      <Filter>Source Files\x64\Release</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -95,8 +147,28 @@
     <ClInclude Include="shaderparser.h">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="Debug\CompilerInterface.h">
+      <Filter>Header Files\Win32\Debug</Filter>
+    </ClInclude>
+    <ClInclude Include="x64\Debug\CompilerInterface.h">
+      <Filter>Header Files\x64\Debug</Filter>
+    </ClInclude>
+    <ClInclude Include="Release\CompilerInterface.h">
+      <Filter>Header Files\Win32\Release</Filter>
+    </ClInclude>
+    <ClInclude Include="x64\Release\CompilerInterface.h">
+      <Filter>Header Files\x64\Release</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\shared\gsl\GSL.natvis" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <SliceCompile Include="CompilerInterface.ice">
+      <Filter>Slice Files</Filter>
+    </SliceCompile>
   </ItemGroup>
 </Project>

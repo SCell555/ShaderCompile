@@ -34,6 +34,11 @@ GetNextCombo( 29, -1, 36 ) -> shader3.fxc : ( riCommandNumber = 31, rhCombo =  "
 
 */
 
+namespace InterceptFxc
+{
+	struct CompileData;
+}
+
 namespace CfgProcessor
 {
 // Working with configuration
@@ -64,6 +69,7 @@ using ComboHandle = __ComboHandle*;
 ComboHandle Combo_GetCombo( uint64_t iCommandNumber );
 ComboHandle Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint64_t iCommandEnd );
 void Combo_FormatCommand( ComboHandle hCombo, std::span<char> pchBuffer );
+void Combo_GetCompileData( ComboHandle hCombo, InterceptFxc::CompileData& pchBuffer );
 void Combo_FormatCommandHumanReadable( ComboHandle hCombo, std::span<char> pchBuffer );
 uint64_t Combo_GetCommandNum( ComboHandle hCombo ) noexcept;
 uint64_t Combo_GetComboNum( ComboHandle hCombo ) noexcept;

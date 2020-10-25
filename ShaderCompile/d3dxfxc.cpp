@@ -16,6 +16,32 @@
 #include <malloc.h>
 #include <vector>
 
+#ifdef USE_PROXY_PROCESS
+#include <Ice/Ice.h>
+#include "x64/Release/CompilerInterface.h"
+Ice::CommunicatorHolder ich;
+Compiler::D3DCompilerPrxPtr compilerProxy;
+#endif
+
+void InitProxy()
+{
+#ifdef USE_PROXY_PROCESS
+	Ice::InitializationData initData;
+	initData.properties = Ice::createProperties();
+	initData.properties->setProperty( "Ice.MessageSizeMax", "16384" );
+	ich = Ice::initialize( initData );
+	compilerProxy = Ice::checkedCast<Compiler::D3DCompilerPrx>( ich->stringToProxy( "D3DCompiler:default -h 127.0.0.1 -p 10000" ) );
+#endif
+}
+
+void Shutdown()
+{
+#ifdef USE_PROXY_PROCESS
+	compilerProxy->Shutdown();
+#endif
+}
+
+#ifndef USE_PROXY_PROCESS
 #pragma comment( lib, "D3DCompiler" )
 
 CSharedFile::CSharedFile( std::vector<char>&& data ) noexcept : std::vector<char>( std::forward<std::vector<char>>( data ) )
@@ -189,3 +215,40 @@ void ExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, unsi
 	Private::FastShaderCompile( pszFilename, macros, szShaderModel, ppResponse, flags );
 }
 } // namespace InterceptFxc
+#else
+void RegisterFileForCompiler( const char* fullPath, const char* regName )
+{
+	compilerProxy->AddInclude( fullPath, regName );
+}
+
+namespace InterceptFxc
+{
+	void ExecuteCommand( const CompileData& pCommand, CmdSink::IResponse** ppResponse, unsigned long flags )
+	{
+		Compiler::Defines defines;
+		defines.reserve( pCommand.defines.size() );
+		for ( const auto& d : pCommand.defines )
+			defines.emplace_back( Compiler::CompilerDefine{ .name = d.first, .value = d.second } );
+
+		auto res = compilerProxy->Compile( pCommand.pszFileName, pCommand.pszVersion, defines, flags );
+		if ( ppResponse )
+		{
+			class ProxyResponse final : public CmdSink::IResponse
+			{
+			public:
+				ProxyResponse( Compiler::CompilerOutput&& output ) noexcept : output( std::forward<Compiler::CompilerOutput>( output ) ) {}
+
+				bool Succeeded() noexcept override { return !output.bytecode.empty(); }
+				size_t GetResultBufferLen() noexcept override { return output.bytecode.size(); }
+				const void* GetResultBuffer() noexcept override { return output.bytecode.data(); }
+				const char* GetListing() noexcept override { return output.error.empty() ? nullptr : reinterpret_cast<const char*>( output.error.data() ); }
+
+			private:
+				Compiler::CompilerOutput output;
+			};
+
+			*ppResponse = new( std::nothrow ) ProxyResponse( std::move( res ) );
+		}
+	}
+}
+#endif

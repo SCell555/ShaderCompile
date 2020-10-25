@@ -904,9 +904,15 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommandThreaded( CfgProcessor:
 {
 	CmdSink::IResponse* pResponse = nullptr;
 
+#ifndef USE_PROXY_PROCESS
 	char chBuffer[4096];
 	Combo_FormatCommand( hCombo, chBuffer );
 	InterceptFxc::ExecuteCommand( chBuffer, &pResponse, gFlags );
+#else
+	InterceptFxc::CompileData data;
+	Combo_GetCompileData( hCombo, data );
+	InterceptFxc::ExecuteCommand( data, &pResponse, gFlags );
+#endif
 
 	HandleCommandResponse( hCombo, pResponse );
 }
@@ -923,9 +929,15 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommand( CfgProcessor::ComboHa
 		std::cout << "running: \"" << clr::green << chReadBuf << clr::reset << "\"" << std::endl;
 	}
 
+#ifndef USE_PROXY_PROCESS
 	char chBuffer[4096];
 	Combo_FormatCommand( hCombo, chBuffer );
 	InterceptFxc::ExecuteCommand( chBuffer, &pResponse, gFlags );
+#else
+	InterceptFxc::CompileData data;
+	Combo_GetCompileData( hCombo, data );
+	InterceptFxc::ExecuteCommand( data, &pResponse, gFlags );
+#endif
 
 	HandleCommandResponse( hCombo, pResponse );
 }
@@ -1653,6 +1665,11 @@ int main( int argc, const char* argv[] )
 	g_bVerbose2 = cmdLine.isSet( "-verbose2" );
 	g_bFastFail = cmdLine.isSet( "-fastfail" );
 
+#ifdef USE_PROXY_PROCESS
+	extern void InitProxy();
+	InitProxy();
+#endif
+
 	// Setting up the minidump handlers
 	SetUnhandledExceptionFilter( ExceptionFilter );
 	SetThreadExecutionState( ES_CONTINUOUS | ES_SYSTEM_REQUIRED );
@@ -1663,6 +1680,11 @@ int main( int argc, const char* argv[] )
 
 	WriteStats();
 	SetThreadExecutionState( ES_CONTINUOUS );
+
+#ifdef USE_PROXY_PROCESS
+	extern void Shutdown();
+	Shutdown();
+#endif
 
 	return gsl::narrow_cast<int>( g_ShaderHadError.size() );
 }
