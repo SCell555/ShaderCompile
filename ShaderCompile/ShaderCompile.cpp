@@ -876,29 +876,6 @@ void CWorkerAccumState<TMutexType>::RangeFinished()
 	TryToPackageData( m_iEndCommand - 1 );
 }
 
-template <size_t N>
-static __forceinline void PrepareFlagsForSubprocess( char ( &pBuf )[N] )
-{
-	if ( gFlags & D3DCOMPILE_PARTIAL_PRECISION )
-		strcat_s( pBuf, "/Gpp " );
-
-	if ( gFlags & D3DCOMPILE_SKIP_VALIDATION )
-		strcat_s( pBuf, "/Vd " );
-
-	if ( gFlags & D3DCOMPILE_NO_PRESHADER )
-		strcat_s( pBuf, "/Op " );
-
-	if ( gFlags & D3DCOMPILE_AVOID_FLOW_CONTROL )
-		strcat_s( pBuf, "/Gfa " );
-	else if ( gFlags & D3DCOMPILE_PREFER_FLOW_CONTROL )
-		strcat_s( pBuf, "/Gfp " );
-
-	if ( gFlags & D3DCOMPILE_SKIP_OPTIMIZATION )
-		strcat_s( pBuf, "/Od" );
-
-	V_StrTrim( pBuf );
-}
-
 template <Threading::Mutex TMutexType>
 void CWorkerAccumState<TMutexType>::ExecuteCompileCommandThreaded( CfgProcessor::ComboHandle hCombo )
 {
@@ -1557,6 +1534,8 @@ int main( int argc, const char* argv[] )
 	cmdLine.add( "", false, 0, 0, "Directs the compiler to not use flow-control constructs where possible", "/Gfa", "-no-flow-control" );
 	cmdLine.add( "", false, 0, 0, "Directs the compiler to use flow-control constructs where possible", "/Gfp", "-prefer-flow-control" );
 	cmdLine.add( "", false, 0, 0, "Disables shader optimization", "/Od", "-disable-optimization" );
+	cmdLine.add( "", false, 0, 0, "Enable debugging information", "/Zi", "-debug-info" );
+	cmdLine.add( "1", false, 1, 0, "Set optimization level (0-3)", "/O", "-optimize" );
 
 	cmdLine.parse( argc, argv );
 
@@ -1594,6 +1573,30 @@ int main( int argc, const char* argv[] )
 	// Optimization
 	if ( cmdLine.isSet( "/Od" ) )
 		gFlags |= D3DCOMPILE_SKIP_OPTIMIZATION;
+
+	if ( cmdLine.isSet( "/Zi" ) )
+		gFlags |= D3DCOMPILE_DEBUG;
+
+	int optLevel = 1;
+	cmdLine.get( "/O" )->getInt( optLevel );
+	switch ( optLevel )
+	{
+	case 0:
+		gFlags |= D3DCOMPILE_OPTIMIZATION_LEVEL0;
+		break;
+	default:
+		std::cout << "Unknown optimization level " << optLevel << ", using default!" << std::endl;
+		[[fallthrough]];
+	case 1:
+		gFlags |= D3DCOMPILE_OPTIMIZATION_LEVEL1;
+		break;
+	case 2:
+		gFlags |= D3DCOMPILE_OPTIMIZATION_LEVEL2;
+		break;
+	case 3:
+		gFlags |= D3DCOMPILE_OPTIMIZATION_LEVEL3;
+		break;
+	}
 
 	std::vector<std::string> badOptions;
 	if ( !cmdLine.gotRequired( badOptions ) || cmdLine.lastArgs.size() != 1 )

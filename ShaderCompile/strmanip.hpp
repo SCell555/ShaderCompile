@@ -72,80 +72,9 @@ static inline std::_Smanip<int64_t> FormatTimeShort( int64_t i )
 	return { __FormatTime2, i };
 }
 
-static __forceinline bool PATHSEPARATOR( char c )
-{
-	return c == '\\' || c == '/';
-}
-
-static inline const char* V_GetFileExtension( const char* path )
-{
-	const char* src = path + ( strlen( path ) - 1 );
-
-	while ( src != path && *( src - 1 ) != '.' )
-		src--;
-
-	if ( src == path || PATHSEPARATOR( *src ) )
-		return nullptr; // no extension
-
-	return src;
-}
-
 static __forceinline bool V_IsAbsolutePath( const char* pStr )
 {
 	return ( pStr[0] && pStr[1] == ':' ) || pStr[0] == '/' || pStr[0] == '\\';
-}
-
-static inline void V_StripFilename( char* path )
-{
-	int length = static_cast<int>( strlen( path ) ) - 1;
-	if ( length <= 0 )
-		return;
-
-	while ( length > 0 && !PATHSEPARATOR( path[length] ) )
-		length--;
-
-	path[length] = 0;
-}
-
-static inline void V_FixSlashes( char* pname, char separator = '\\' )
-{
-	while ( *pname )
-	{
-		if ( *pname == '/' || *pname == '\\' )
-			*pname = separator;
-		pname++;
-	}
-}
-
-static inline void V_StrTrim( char* pStr )
-{
-	char* pSource = pStr;
-	char* pDest = pStr;
-
-	// skip white space at the beginning
-	while ( *pSource != 0 && isspace( *pSource ) )
-		pSource++;
-
-	// copy everything else
-	char* pLastWhiteBlock = nullptr;
-	while ( *pSource != 0 )
-	{
-		*pDest = *pSource++;
-		if ( isspace( *pDest ) )
-		{
-			if ( pLastWhiteBlock == nullptr )
-				pLastWhiteBlock = pDest;
-		}
-		else
-			pLastWhiteBlock = nullptr;
-		pDest++;
-	}
-	*pDest = 0;
-
-	// did we end in a whitespace block?
-	if ( pLastWhiteBlock != nullptr )
-		// yep; shorten the string
-		*pLastWhiteBlock = 0;
 }
 
 #endif // STRMANIP_HPP
