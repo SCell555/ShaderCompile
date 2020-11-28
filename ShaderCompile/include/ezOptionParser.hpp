@@ -165,7 +165,7 @@ template <typename T>
 static void ToNumber( std::string** strings, T* out, size_t n )
 {
 	for ( size_t i = 0; i < n; ++i )
-		std::from_chars( &*strings[i]->cbegin(), &*strings[i]->cend(), out[i] );
+		std::from_chars( strings[i]->c_str(), strings[i]->c_str() + strings[i]->size(), out[i] );
 }
 /* ################################################################### */
 template <typename T>
@@ -174,7 +174,7 @@ static void StringsToNumbers( std::vector<std::string>& strings, std::vector<T>&
 	for ( size_t i = 0; i < strings.size(); ++i )
 	{
 		T val;
-		std::from_chars( &*strings[i].cbegin(), &*strings[i].cend(), val );
+		std::from_chars( strings[i].c_str(), strings[i].c_str() + strings[i].size(), val );
 		out.emplace_back( val );
 	}
 }
@@ -185,7 +185,7 @@ static void StringsToNumbers( std::vector<std::string*>* strings, std::vector<T>
 	for ( size_t i = 0; i < strings->size(); ++i )
 	{
 		T val;
-		std::from_chars( &*strings->at( i )->cbegin(), &*strings->at( i )->cend(), val );
+		std::from_chars( strings->at( i )->c_str(), strings->at( i )->c_str() + strings->at( i )->size(), val );
 		out->emplace_back( val );
 	}
 }
@@ -749,7 +749,7 @@ bool ezOptionValidator::isValid( const std::string* valueAsString )
 #define CHECKRANGE( E, T )                                                                                               \
 	{                                                                                                                    \
 		long long E##value;                                                                                              \
-		std::from_chars( &*valueAsString->cbegin(), &*valueAsString->cend(), E##value );                                 \
+		std::from_chars( valueAsString->c_str(), valueAsString->c_str() + valueAsString->size(), E##value );             \
 		constexpr long long E##min = static_cast<long long>( std::numeric_limits<T>::min() );                            \
 		if ( E##value < E##min )                                                                                         \
 		{                                                                                                                \
@@ -834,7 +834,7 @@ bool ezOptionValidator::isValid( const std::string* valueAsString )
 			{
 				constexpr double dmax = static_cast<double>( std::numeric_limits<float>::max() );
 				double dvalue;
-				std::from_chars( &*valueAsString->cbegin(), &*valueAsString->cend(), dvalue );
+				std::from_chars( valueAsString->c_str(), valueAsString->c_str() + valueAsString->size(), dvalue );
 				double dmin = -dmax;
 				if ( dvalue < dmin )
 				{
@@ -857,7 +857,7 @@ bool ezOptionValidator::isValid( const std::string* valueAsString )
 			{
 				constexpr long double ldmax = static_cast<long double>( std::numeric_limits<double>::max() );
 				long double ldvalue;
-				std::from_chars( &*valueAsString->cbegin(), &*valueAsString->cend(), ldvalue );
+				std::from_chars( valueAsString->c_str(), valueAsString->c_str() + valueAsString->size(), ldvalue );
 				long double ldmin = -ldmax;
 
 				if ( ldvalue < ldmin )
@@ -914,7 +914,7 @@ bool ezOptionValidator::isValid( const std::string* valueAsString )
 	{                                                                                           \
 		/* Value string converted to true native type. */                                       \
 		U v;                                                                                    \
-		std::from_chars( &*valueAsString->cbegin(), &*valueAsString->cend(), v );               \
+		std::from_chars( valueAsString->c_str(), valueAsString->c_str() + valueAsString->size(), v ); \
 		/* Check if within list. */                                                             \
 		if ( op == IN )                                                                         \
 		{                                                                                       \
@@ -1147,7 +1147,7 @@ void OptionGroup::getInt( int& out )
 		if ( defaults.empty() )
 			out = 0;
 		else
-			std::from_chars( &*defaults.cbegin(), &*defaults.cend(), out );
+			std::from_chars( defaults.c_str(), defaults.c_str() + defaults.size(), out );
 	}
 	else
 	{
@@ -1155,7 +1155,7 @@ void OptionGroup::getInt( int& out )
 			out = 0;
 		else
 		{
-			std::from_chars( &*args[0]->at( 0 )->cbegin(), &*args[0]->at( 0 )->cend(), out );
+			std::from_chars( args[0]->at( 0 )->c_str(), args[0]->at( 0 )->c_str() + args[0]->at( 0 )->size(), out );
 		}
 	}
 }
@@ -1167,7 +1167,7 @@ void OptionGroup::getLong( long& out )
 		if ( defaults.empty() )
 			out = 0;
 		else
-			std::from_chars( &*defaults.cbegin(), &*defaults.cend(), out );
+			std::from_chars( defaults.c_str(), defaults.c_str() + defaults.size(), out );
 	}
 	else
 	{
@@ -1175,7 +1175,7 @@ void OptionGroup::getLong( long& out )
 			out = 0;
 		else
 		{
-			std::from_chars( &*args[0]->at( 0 )->cbegin(), &*args[0]->at( 0 )->cend(), out );
+			std::from_chars( args[0]->at( 0 )->c_str(), args[0]->at( 0 )->c_str() + args[0]->at( 0 )->size(), out );
 		}
 	}
 }
@@ -1188,7 +1188,7 @@ void OptionGroup::getLongLong( long long& out )
 			out = 0;
 		else
 		{
-			std::from_chars( &*defaults.cbegin(), &*defaults.cend(), out );
+			std::from_chars( defaults.c_str(), defaults.c_str() + defaults.size(), out );
 		}
 	}
 	else
@@ -1197,7 +1197,7 @@ void OptionGroup::getLongLong( long long& out )
 			out = 0;
 		else
 		{
-			std::from_chars( &*args[0]->at( 0 )->cbegin(), &*args[0]->at( 0 )->cend(), out );
+			std::from_chars( args[0]->at( 0 )->c_str(), args[0]->at( 0 )->c_str() + args[0]->at( 0 )->size(), out );
 		}
 	}
 }
@@ -1209,7 +1209,7 @@ void OptionGroup::getULong( unsigned long& out )
 		if ( defaults.empty() )
 			out = 0;
 		else
-			std::from_chars( &*defaults.cbegin(), &*defaults.cend(), out );
+			std::from_chars( defaults.c_str(), defaults.c_str() + defaults.size(), out );
 	}
 	else
 	{
@@ -1217,7 +1217,7 @@ void OptionGroup::getULong( unsigned long& out )
 			out = 0;
 		else
 		{
-			std::from_chars( &*args[0]->at( 0 )->cbegin(), &*args[0]->at( 0 )->cend(), out );
+			std::from_chars( args[0]->at( 0 )->c_str(), args[0]->at( 0 )->c_str() + args[0]->at( 0 )->size(), out );
 		}
 	}
 }
@@ -1230,7 +1230,7 @@ void OptionGroup::getULongLong( unsigned long long& out )
 			out = 0;
 		else
 		{
-			std::from_chars( &*defaults.cbegin(), &*defaults.cend(), out );
+			std::from_chars( defaults.c_str(), defaults.c_str() + defaults.size(), out );
 		}
 	}
 	else
@@ -1239,7 +1239,7 @@ void OptionGroup::getULongLong( unsigned long long& out )
 			out = 0;
 		else
 		{
-			std::from_chars( &*args[0]->at( 0 )->cbegin(), &*args[0]->at( 0 )->cend(), out );
+			std::from_chars( args[0]->at( 0 )->c_str(), args[0]->at( 0 )->c_str() + args[0]->at( 0 )->size(), out );
 		}
 	}
 }
@@ -1251,7 +1251,7 @@ void OptionGroup::getFloat( float& out )
 		if ( defaults.empty() )
 			out = 0.0;
 		else
-			std::from_chars( &*defaults.cbegin(), &*defaults.cend(), out );
+			std::from_chars( defaults.c_str(), defaults.c_str() + defaults.size(), out );
 	}
 	else
 	{
@@ -1259,7 +1259,7 @@ void OptionGroup::getFloat( float& out )
 			out = 0.0;
 		else
 		{
-			std::from_chars( &*args[0]->at( 0 )->cbegin(), &*args[0]->at( 0 )->cend(), out );
+			std::from_chars( args[0]->at( 0 )->c_str(), args[0]->at( 0 )->c_str() + args[0]->at( 0 )->size(), out );
 		}
 	}
 }
@@ -1271,7 +1271,7 @@ void OptionGroup::getDouble( double& out )
 		if ( defaults.empty() )
 			out = 0.0;
 		else
-			std::from_chars( &*defaults.cbegin(), &*defaults.cend(), out );
+			std::from_chars( defaults.c_str(), defaults.c_str() + defaults.size(), out );
 	}
 	else
 	{
@@ -1279,7 +1279,7 @@ void OptionGroup::getDouble( double& out )
 			out = 0.0;
 		else
 		{
-			std::from_chars( &*args[0]->at( 0 )->cbegin(), &*args[0]->at( 0 )->cend(), out );
+			std::from_chars( args[0]->at( 0 )->c_str(), args[0]->at( 0 )->c_str() + args[0]->at( 0 )->size(), out );
 		}
 	}
 }
@@ -2177,41 +2177,44 @@ void ezOptionParser::getUsageDescriptions( std::string& usage, int width, Layout
 		// All the following split-fu could be optimized by just using substring (offset, length) tuples, but just to get it done, we'll do some not-too expensive string copying.
 		SplitDelim( groups[k]->help, '\n', desc );
 		// Split lines longer than allowable help width.
-		for ( insertionIter = desc.begin(), cIter = insertionIter++;
-			  cIter != desc.end();
-			  cIter = insertionIter++ )
+		if ( desc.size() > 1 )
 		{
-			if ( (long int)( ( *cIter )->size() ) > helpwidth )
+			for ( insertionIter = desc.begin(), cIter = insertionIter++;
+				cIter != desc.end();
+				cIter = insertionIter++ )
 			{
-				// Get pointer to next string to insert new strings before it.
-				std::string* rem = *cIter;
-				// Remove this line and add back in pieces.
-				desc.erase( cIter );
-				// Loop until remaining string is short enough.
-				while ( (long int)rem->size() > helpwidth )
+				if ( (long int)( ( *cIter )->size() ) > helpwidth )
 				{
-					// Find whitespace to split before helpwidth.
-					if ( rem->at( helpwidth ) == ' ' )
+					// Get pointer to next string to insert new strings before it.
+					std::string* rem = *cIter;
+					// Remove this line and add back in pieces.
+					desc.erase( cIter );
+					// Loop until remaining string is short enough.
+					while ( (long int)rem->size() > helpwidth )
 					{
-						// If word ends exactly at helpwidth, then split after it.
-						pos = helpwidth;
+						// Find whitespace to split before helpwidth.
+						if ( rem->at( helpwidth ) == ' ' )
+						{
+							// If word ends exactly at helpwidth, then split after it.
+							pos = helpwidth;
+						}
+						else
+						{
+							// Otherwise, split occurs midword, so find whitespace before this word.
+							pos = rem->rfind( " ", helpwidth );
+						}
+						// Insert split string.
+						desc.insert( insertionIter, new std::string( *rem, 0, pos ) );
+						// Now skip any whitespace to start new line.
+						pos = rem->find_first_not_of( ' ', pos );
+						rem->erase( 0, pos );
 					}
-					else
-					{
-						// Otherwise, split occurs midword, so find whitespace before this word.
-						pos = rem->rfind( " ", helpwidth );
-					}
-					// Insert split string.
-					desc.insert( insertionIter, new std::string( *rem, 0, pos ) );
-					// Now skip any whitespace to start new line.
-					pos = rem->find_first_not_of( ' ', pos );
-					rem->erase( 0, pos );
-				}
 
-				if ( rem->size() )
-					desc.insert( insertionIter, rem );
-				else
-					delete rem;
+					if ( rem->size() )
+						desc.insert( insertionIter, rem );
+					else
+						delete rem;
+				}
 			}
 		}
 
