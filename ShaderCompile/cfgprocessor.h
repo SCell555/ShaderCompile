@@ -36,8 +36,10 @@ GetNextCombo( 29, -1, 36 ) -> shader3.fxc : ( riCommandNumber = 31, rhCombo =  "
 
 namespace CfgProcessor
 {
+#if 0
 // Working with configuration
 void ReadConfiguration( const char* configFile );
+#endif
 
 struct CfgEntryInfo
 {

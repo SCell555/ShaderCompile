@@ -19,8 +19,6 @@
 #include "gsl/gsl_narrow"
 #include "CRC32.hpp"
 
-#pragma comment(lib, "re2.lib")
-
 using namespace std::literals;
 namespace fs = std::filesystem;
 
@@ -136,9 +134,9 @@ bool Parser::ParseFile( const std::string& name, const std::string& _version, st
 	using re2::RE2;
 	centroid_mask = 0U;
 	const auto f = name.find_last_of( '.' );
-	const bool isPs = RE2::PartialMatch( f != std::string::npos ? name.substr( 0, f ) : name, RE2( R"reg(_ps(\d\db|\d\d|\dx|xx)$)reg"sv ) );
-	const RE2 shouldMatch( isPs ? R"reg(\[ps(\d+\w?)\])reg"sv : R"reg(\[vs(\d+\w?)\])reg"sv );
-	const RE2 shouldNotMatch( isPs ? R"reg(\[vs\d+\w?\])reg"sv : R"reg(\[ps\d+\w?\])reg"sv );
+	const bool isPs = RE2::PartialMatch( f != std::string::npos ? name.substr( 0, f ) : name, RE2( R"reg(_ps(\d\db|\d\d|\dx|xx)$)reg"s ) );
+	const RE2 shouldMatch( isPs ? R"reg(\[ps(\d+\w?)\])reg"s : R"reg(\[vs(\d+\w?)\])reg"s );
+	const RE2 shouldNotMatch( isPs ? R"reg(\[vs\d+\w?\])reg"s : R"reg(\[ps\d+\w?\])reg"s );
 	const std::string version = !isPs && _version == "20b"sv ? "20" : _version;
 
 	const auto& trim = []( std::string s ) -> std::string
@@ -206,7 +204,7 @@ bool Parser::ParseFile( const std::string& name, const std::string& _version, st
 void Parser::WriteInclude( const std::string& fileName, const std::string& name, const std::vector<Combo>& static_c,
 							const std::vector<Combo>& dynamic_c, const std::vector<std::string>& skip )
 {
-	const bool isVs = RE2::PartialMatch( name, RE2( R"reg(_vs(\d\db|\d\d|\dx|xx)$)reg"sv ) );
+	const bool isVs = RE2::PartialMatch( name, RE2( R"reg(_vs(\d\db|\d\d|\dx|xx)$)reg"s ) );
 	if ( fs::exists( fileName ) )
 		fs::permissions( fileName, fs::perms::owner_read | fs::perms::owner_write );
 

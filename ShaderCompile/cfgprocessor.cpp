@@ -30,7 +30,9 @@
 #include <fstream>
 
 #include "gsl/gsl_narrow"
+#if 0
 #include "json/json.h"
+#endif
 #include "termcolor/style.hpp"
 #include "termcolors.hpp"
 #include "strmanip.hpp"
@@ -1024,6 +1026,7 @@ void SetupConfigurationDirect( const std::string& name, const std::string& versi
 	}
 }
 
+#if 0
 static void ProcessConfiguration( const char* pConfigFile )
 {
 	{
@@ -1143,7 +1146,7 @@ static void ProcessConfiguration( const char* pConfigFile )
 		s_mapComboCommands.emplace( nCurrentCommand, chi );
 	}
 }
-
+#endif
 }; // namespace ConfigurationProcessing
 
 namespace CfgProcessor
@@ -1158,10 +1161,12 @@ static ComboHandle AsHandle( CPCHI_t* pImpl ) noexcept
 	return reinterpret_cast<ComboHandle>( pImpl );
 }
 
+#if 0
 void ReadConfiguration( const char* configFile )
 {
 	ConfigurationProcessing::ProcessConfiguration( configFile );
 }
+#endif
 
 void DescribeConfiguration( std::unique_ptr<CfgEntryInfo[]>& rarrEntries )
 {

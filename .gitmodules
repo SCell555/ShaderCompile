@@ -1,3 +1,6 @@
 [submodule "shared/gsl"]
 	path = shared/gsl
 	url = https://github.com/microsoft/GSL.git
+[submodule "shared/re2"]
+	path = shared/re2
+	url = https://github.com/google/re2.git
