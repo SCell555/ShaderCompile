@@ -277,8 +277,6 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 			file << "\n\n"sv;
 		};
 
-		std::string nameUpper( name.length(), ' ' );
-		std::transform( name.begin(), name.end(), nameUpper.begin(), []( const char& c ) { return (char)std::toupper( c ); } );
 		if ( !skip.empty() )
 		{
 			file << "// ALL SKIP STATEMENTS THAT AFFECT THIS SHADER!!!\n"sv;
@@ -286,8 +284,8 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 				file << "// "sv << s << "\n"sv;
 			file << "\n"sv;
 		}
-		file << "#ifndef "sv << nameUpper << "_H\n#define "sv << nameUpper
-			<< "_H\n\n" R"(#include "shaderapi/ishaderapi.h")" "\n" R"(#include "shaderapi/ishadershadow.h")" "\n" R"(#include "materialsystem/imaterialvar.h")" "\n\n"sv;
+
+		file << "#pragma once\n" R"(#include "shaderlib/cshader.h")" "\n"sv;
 
 		writeVars( "Static"sv, static_c, "IShaderShadow* pShaderShadow, IMaterialVar** params"sv,
 			std::accumulate( dynamic_c.begin(), dynamic_c.end(), 1U, []( uint32_t a, const Combo& b ) { return a * ( b.maxVal - b.minVal + 1 ); } ) );
@@ -296,7 +294,37 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 
 		writeVars( "Dynamic"sv, dynamic_c, "IShaderDynamicAPI* pShaderAPI"sv, 1U );
 
-		file << "\n#endif\t// "sv << nameUpper << "_H"sv;
+		file << "\n\n"sv;
+
+		const auto& writeComboArray = [&file, &name]( bool dynamic, const std::vector<Combo>& combos )
+		{
+			file << "static constexpr ShaderComboInformation_t s_"sv << ( dynamic ? "Dynamic"sv : "Static"sv ) << "ComboArray_"sv << name << "[] =\n{\n"sv;
+			for ( const Combo& c : combos )
+				file << "\t{ \""sv << c.name << "\", "sv << c.minVal << ", "sv << c.maxVal << " },\n"sv;
+			file << "};\n"sv;
+		};
+
+		if ( !dynamic_c.empty() )
+			writeComboArray( true, dynamic_c );
+
+		if ( !static_c.empty() )
+			writeComboArray( false, static_c );
+
+		file << "static constexpr ShaderComboSemantics_t "sv << name << "_combos =\n{\n\t\""sv << name << "\",\n"sv;
+
+		if ( !dynamic_c.empty() )
+			file << "\ts_DynamicComboArray_"sv << name << ", "sv << dynamic_c.size() << ",\n"sv;
+		else
+			file << "\tnullptr, 0,\n"sv;
+
+		if ( !static_c.empty() )
+			file << "\ts_StaticComboArray_"sv << name << ", "sv << static_c.size() << ",\n"sv;
+		else
+			file << "\tnullptr, 0\n"sv;
+
+		file << "};\n"sv;
+
+		file << "static const class ConstructMe_"sv << name << "\n{\n\tConstructMe_"sv << name << "()\n\t{\n\t\tGetShaderDLL()->AddShaderComboInformation( &"sv << name << "_combos );\n\t}\n} s_ConstuctMe_"sv << name;
 	}
 
 	fs::permissions( fileName, fs::perms::owner_read );
