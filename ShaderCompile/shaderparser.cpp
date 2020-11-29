@@ -18,6 +18,10 @@
 #include "re2/re2.h"
 #include "gsl/gsl_narrow"
 #include "CRC32.hpp"
+#include "strmanip.hpp"
+
+
+extern std::string g_pShaderPath;
 
 using namespace std::literals;
 namespace fs = std::filesystem;
@@ -79,10 +83,18 @@ std::string Parser::ConstructName( const std::string& baseName, const std::strin
 template <typename T>
 static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, T& func )
 {
-	const auto rawName = name.filename().string();
-	const auto parent = name.parent_path();
+	const auto fullPath = fs::absolute( name );
+	const auto parent = fullPath.parent_path();
+	if ( parent.string().size() < g_pShaderPath.size() )
+	{
+		std::cout << clr::red << "Leaving root directory!"sv << clr::reset << std::endl;
+		return false;
+	}
+
+	auto rawName = fullPath.string().substr( g_pShaderPath.size() + 1 );
+	std::for_each( rawName.begin(), rawName.end(), []( char& c ) { if ( c == '\\' ) c = '/'; } );
 	includes.emplace_back( rawName );
-	std::ifstream file( name );
+	std::ifstream file( fullPath );
 	if ( file.fail() )
 	{
 		std::cout << clr::red << "File \""sv << rawName << "\" does not exist"sv << clr::reset << std::endl;
@@ -113,6 +125,12 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 		re2::RE2::FullMatch( line, r::cpp_comment, &reducedLine );
 		if ( re2::RE2::PartialMatch( reducedLine.empty() ? line : reducedLine, r::inc, &incl ) && !( reducedLine.empty() ? line : reducedLine ).starts_with( "//"sv ) )
 		{
+			if ( V_IsAbsolutePath( incl.c_str() ) )
+			{
+				std::cout << clr::red << "Absolute path \""sv << incl << "\" in #include, aborting!"sv << clr::reset << std::endl;
+				return false;
+			}
+
 			reducedLine.clear();
 			if ( !ReadFile( parent / incl, includes, func ) )
 				return false;

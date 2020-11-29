@@ -30,3 +30,5 @@ include_directories(ShaderCompile/include shared/re2)
 
 set_property(TARGET ShaderCompile PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set_property(TARGET re2 PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+target_compile_definitions(ShaderCompile PRIVATE _ITERATOR_DEBUG_LEVEL=0)
+target_compile_definitions(re2 PRIVATE _ITERATOR_DEBUG_LEVEL=0)

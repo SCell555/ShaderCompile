@@ -21,6 +21,7 @@
 #include <concepts>
 #include <cstdarg>
 #include <ctime>
+#include <filesystem>
 #include <map>
 #include <numeric>
 #include <set>
@@ -959,37 +960,25 @@ void SetupConfigurationDirect( const std::string& name, const std::string& versi
 
 	s_setEntries.insert( std::move( cfg ) );
 
-	char filename[1024];
+	const std::filesystem::path root{ g_pShaderPath };
 	for ( const std::string& file : includes )
 	{
-		if ( V_IsAbsolutePath( file.c_str() ) )
-			strcpy_s( filename, file.c_str() );
-		else
-			sprintf_s( filename, "%s\\%s", g_pShaderPath.c_str(), file.c_str() );
-
-		std::ifstream src( filename, std::ios::binary | std::ios::ate );
+		std::ifstream src( root / file, std::ios::binary | std::ios::ate );
 		if ( !src )
 		{
-			std::cout << clr::pinkish << "Can't find \"" << clr::red << filename << clr::pinkish << "\"" << std::endl;
+			std::cout << clr::pinkish << "Can't find \"" << clr::red << file << clr::pinkish << "\"" << std::endl;
 			continue;
 		}
 
-		char justFilename[MAX_PATH];
-		const char* pLastSlash = std::max( strrchr( file.c_str(), '/' ), strrchr( file.c_str(), '\\' ) );
-		if ( pLastSlash )
-			strcpy_s( justFilename, pLastSlash + 1 );
-		else
-			strcpy_s( justFilename, file.c_str() );
-
 		if ( g_bVerbose )
-			std::cout << "adding file to cache: \"" << clr::green << justFilename << clr::reset << "\"" << std::endl;
+			std::cout << "adding file to cache: \"" << clr::green << file << clr::reset << "\"" << std::endl;
 
 		std::vector<char> data( gsl::narrow<size_t>( src.tellg() ) );
 		src.clear();
 		src.seekg( 0, std::ios::beg );
 		src.read( data.data(), data.size() );
 
-		fileCache.Add( justFilename, std::move( data ) );
+		fileCache.Add( file, std::move( data ) );
 	}
 
 	uint64_t nCurrentCommand = 0;
