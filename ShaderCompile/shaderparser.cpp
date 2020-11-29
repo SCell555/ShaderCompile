@@ -310,7 +310,7 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 
 		writeVars( "Dynamic"sv, dynamic_c, "IShaderDynamicAPI* pShaderAPI"sv, 1U );
 
-		file << "\n\n"sv;
+		file << "\n"sv;
 
 		const auto& writeComboArray = [&file, &name]( bool dynamic, const std::vector<Combo>& combos )
 		{
@@ -326,21 +326,21 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 		if ( !static_c.empty() )
 			writeComboArray( false, static_c );
 
-		file << "static constexpr ShaderComboSemantics_t "sv << name << "_combos =\n{\n\t\""sv << name << "\",\n"sv;
+		file << "static constexpr ShaderComboSemantics_t "sv << name << "_combos =\n{\n\t\""sv << name << "\", "sv;
 
 		if ( !dynamic_c.empty() )
-			file << "\ts_DynamicComboArray_"sv << name << ", "sv << dynamic_c.size() << ",\n"sv;
+			file << "s_DynamicComboArray_"sv << name << ", "sv << dynamic_c.size() << ", "sv;
 		else
-			file << "\tnullptr, 0,\n"sv;
+			file << "nullptr, 0, "sv;
 
 		if ( !static_c.empty() )
-			file << "\ts_StaticComboArray_"sv << name << ", "sv << static_c.size() << ",\n"sv;
+			file << "s_StaticComboArray_"sv << name << ", "sv << static_c.size();
 		else
-			file << "\tnullptr, 0\n"sv;
+			file << "nullptr, 0"sv;
 
-		file << "};\n"sv;
+		file << "\n};\n"sv;
 
-		file << "static const class ConstructMe_"sv << name << "\n{\n\tConstructMe_"sv << name << "()\n\t{\n\t\tGetShaderDLL()->AddShaderComboInformation( &"sv << name << "_combos );\n\t}\n} s_ConstuctMe_"sv << name;
+		file << "static const class ConstructMe_"sv << name << "\n{\n\tConstructMe_"sv << name << "()\n\t{\n\t\tGetShaderDLL()->AddShaderComboInformation( &"sv << name << "_combos );\n\t}\n} s_ConstuctMe_"sv << name << ";"sv;
 	}
 
 	fs::permissions( fileName, fs::perms::owner_read );
