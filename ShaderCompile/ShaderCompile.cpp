@@ -883,7 +883,7 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommandThreaded( CfgProcessor:
 
 	char chBuffer[4096];
 	Combo_FormatCommand( hCombo, chBuffer );
-	InterceptFxc::ExecuteCommand( chBuffer, &pResponse, gFlags );
+	Compiler::ExecuteCommand( chBuffer, pResponse, gFlags );
 
 	HandleCommandResponse( hCombo, pResponse );
 }
@@ -902,7 +902,7 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommand( CfgProcessor::ComboHa
 
 	char chBuffer[4096];
 	Combo_FormatCommand( hCombo, chBuffer );
-	InterceptFxc::ExecuteCommand( chBuffer, &pResponse, gFlags );
+	Compiler::ExecuteCommand( chBuffer, pResponse, gFlags );
 
 	HandleCommandResponse( hCombo, pResponse );
 }

@@ -36,7 +36,7 @@ public:
 
 	void Add( const std::string& fileName, std::vector<char>&& data );
 
-	[[nodiscard]] const CSharedFile* Get( const std::string& filename );
+	[[nodiscard]] const CSharedFile* Get( const std::string& filename ) const;
 
 	void Clear();
 
@@ -47,9 +47,9 @@ protected:
 
 extern FileCache fileCache;
 
-namespace InterceptFxc
+namespace Compiler
 {
-	void ExecuteCommand( const char* pCommand, CmdSink::IResponse** ppResponse, unsigned long flags );
+	void ExecuteCommand( const char* pCommand, CmdSink::IResponse* &ppResponse, unsigned long flags );
 }; // namespace InterceptFxc
 
 #endif // #ifndef D3DXFXC_H
