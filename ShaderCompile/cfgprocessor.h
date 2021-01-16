@@ -6,11 +6,7 @@
 //
 //=============================================================================//
 
-#ifndef CFGPROCESSOR_H
-#define CFGPROCESSOR_H
-#ifdef _WIN32
-	#pragma once
-#endif
+#pragma once
 
 #include "basetypes.h"
 #include <span>
@@ -75,5 +71,3 @@ ComboHandle Combo_Alloc( ComboHandle hComboCopyFrom ) noexcept;
 void Combo_Assign( ComboHandle hComboDst, ComboHandle hComboSrc );
 void Combo_Free( ComboHandle& rhComboFree ) noexcept;
 }; // namespace CfgProcessor
-
-#endif // #ifndef CFGPROCESSOR_H

@@ -1,7 +1,4 @@
-﻿#ifndef BASETYPES_H
-#define BASETYPES_H
-
-#pragma once
+﻿#pragma once
 
 #include <cstdint>
 #ifdef _DEBUG
@@ -11,7 +8,5 @@
 #ifdef _DEBUG
 	#define Assert assert
 #else
-	#define Assert __noop
+	#define Assert(e)
 #endif
-
-#endif // BASETYPES_H

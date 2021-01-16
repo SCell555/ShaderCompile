@@ -4,11 +4,7 @@
 //
 //=============================================================================//
 
-#ifndef SHADER_VCS_VERSION_H
-#define SHADER_VCS_VERSION_H
-#ifdef _WIN32
-	#pragma once
-#endif
+#pragma once
 
 #include "basetypes.h"
 
@@ -73,5 +69,3 @@ struct StaticComboAliasRecord_t // for duplicate static combos
 	uint32_t m_nSourceStaticCombo; // the combo it is the same as
 };
 static_assert( sizeof( StaticComboAliasRecord_t ) == 2 * 4 );
-
-#endif // SHADER_VCS_VERSION_H

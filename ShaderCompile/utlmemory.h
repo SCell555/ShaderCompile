@@ -7,12 +7,7 @@
 // A growable memory class.
 //===========================================================================//
 
-#ifndef UTLMEMORY_H
-#define UTLMEMORY_H
-
-#ifdef _WIN32
-	#pragma once
-#endif
+#pragma once
 
 #include "basetypes.h"
 #include <cstring>
@@ -871,5 +866,3 @@ void CUtlMemoryAligned<T, nAlignment>::Purge()
 		this->m_nAllocationCount = 0;
 	}
 }
-
-#endif // UTLMEMORY_H

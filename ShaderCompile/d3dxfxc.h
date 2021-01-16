@@ -6,11 +6,7 @@
 //
 //=============================================================================//
 
-#ifndef D3DXFXC_H
-#define D3DXFXC_H
-#ifdef _WIN32
-	#pragma once
-#endif
+#pragma once
 
 #include "basetypes.h"
 #include "cmdsink.h"
@@ -51,5 +47,3 @@ namespace Compiler
 {
 	void ExecuteCommand( const char* pCommand, CmdSink::IResponse* &ppResponse, unsigned long flags );
 }; // namespace InterceptFxc
-
-#endif // #ifndef D3DXFXC_H

@@ -6,12 +6,7 @@
 // $NoKeywords: $
 //===========================================================================//
 
-#ifndef UTILINTRUSIVELIST_H
-#define UTILINTRUSIVELIST_H
-
-#ifdef _WIN32
-	#pragma once
-#endif
+#pragma once
 
 #include "basetypes.h"
 #include "utlmemory.h"
@@ -804,5 +799,3 @@ void PrependDListWithTailToDList( CUtlIntrusiveDListWithTailPtr<T>& src, CUtlInt
 		dest.m_pHead = src.m_pHead;
 	}
 }
-
-#endif

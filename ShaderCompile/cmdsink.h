@@ -6,11 +6,7 @@
 //
 //=============================================================================//
 
-#ifndef CMDSINK_H
-#define CMDSINK_H
-#ifdef _WIN32
-	#pragma once
-#endif
+#pragma once
 
 namespace CmdSink
 {
@@ -42,5 +38,3 @@ public:
 };
 
 }; // namespace CmdSink
-
-#endif // #ifndef CMDSINK_H

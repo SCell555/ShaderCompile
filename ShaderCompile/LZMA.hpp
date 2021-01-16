@@ -1,5 +1,4 @@
-﻿#ifndef LZMA_HPP
-#define LZMA_HPP
+﻿#pragma once
 
 namespace LZMA
 {
@@ -198,5 +197,3 @@ namespace LZMA
 		return pRet;
 	}
 } // namespace LZMA
-
-#endif // LZMA_HPP

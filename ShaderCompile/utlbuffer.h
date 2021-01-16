@@ -7,12 +7,7 @@
 // Serialization/unserialization buffer
 //=============================================================================//
 
-#ifndef UTLBUFFER_H
-#define UTLBUFFER_H
-
-#ifdef _WIN32
-	#pragma once
-#endif
+#pragma once
 
 #include "basetypes.h"
 #include "utlmemory.h"
@@ -969,5 +964,3 @@ inline void CUtlBuffer::CopyBuffer( const void* pubData, int cubData )
 		Put( pubData, cubData );
 	}
 }
-
-#endif // UTLBUFFER_H

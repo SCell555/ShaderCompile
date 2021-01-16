@@ -1,5 +1,4 @@
-﻿#ifndef STRMANIP_HPP
-#define STRMANIP_HPP
+﻿#pragma once
 
 #include <iomanip>
 
@@ -76,5 +75,3 @@ static __forceinline bool V_IsAbsolutePath( const char* pStr )
 {
 	return ( pStr[0] && pStr[1] == ':' ) || pStr[0] == '/' || pStr[0] == '\\';
 }
-
-#endif // STRMANIP_HPP

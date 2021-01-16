@@ -7,12 +7,7 @@
 // Serialization/unserialization buffer
 //=============================================================================//
 
-#ifndef UTLNODEHASH_H
-#define UTLNODEHASH_H
-
-#ifdef _WIN32
-	#pragma once
-#endif
+#pragma once
 
 #include "utlintrusivelist.h"
 
@@ -81,5 +76,3 @@ public:
 		Purge();
 	}
 };
-
-#endif
