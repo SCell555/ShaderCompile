@@ -20,8 +20,10 @@
 #include "CRC32.hpp"
 #include "strmanip.hpp"
 
-
-extern std::string g_pShaderPath;
+namespace ConfigurationProcessing
+{
+	std::vector<std::pair<std::string, std::string>> GenerateSkipAsserts( const std::vector<Parser::Combo>& combos, const std::vector<std::string>& skips );
+}
 
 using namespace std::literals;
 namespace fs = std::filesystem;
@@ -81,17 +83,17 @@ std::string Parser::ConstructName( const std::string& baseName, const std::strin
 }
 
 template <typename T>
-static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, T& func )
+static bool ReadFile( const fs::path& name, const std::string& srcPath, std::vector<std::string>& includes, T& func )
 {
 	const auto fullPath = fs::absolute( name );
 	const auto parent = fullPath.parent_path();
-	if ( parent.string().size() < g_pShaderPath.size() )
+	if ( parent.string().size() < srcPath.size() )
 	{
 		std::cout << clr::red << "Leaving root directory!"sv << clr::reset << std::endl;
 		return false;
 	}
 
-	auto rawName = fullPath.string().substr( g_pShaderPath.size() + 1 );
+	auto rawName = fullPath.string().substr( srcPath.size() + 1 );
 	std::for_each( rawName.begin(), rawName.end(), []( char& c ) { if ( c == '\\' ) c = '/'; } );
 	includes.emplace_back( rawName );
 	std::ifstream file( fullPath );
@@ -132,7 +134,7 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 			}
 
 			reducedLine.clear();
-			if ( !ReadFile( parent / incl, includes, func ) )
+			if ( !ReadFile( parent / incl, srcPath, includes, func ) )
 				return false;
 			continue;
 		}
@@ -146,13 +148,14 @@ static bool ReadFile( const fs::path& name, std::vector<std::string>& includes, 
 	return !cComment;
 }
 
-bool Parser::ParseFile( const std::string& name, const std::string& _version, std::vector<Combo>& static_c, std::vector<Combo>& dynamic_c,
+bool Parser::ParseFile( const fs::path& name, const std::string& root, const std::string& _version, std::vector<Combo>& static_c, std::vector<Combo>& dynamic_c,
 						std::vector<std::string>& skip, uint32_t& centroid_mask, std::vector<std::string>& includes )
 {
 	using re2::RE2;
 	centroid_mask = 0U;
-	const auto f = name.find_last_of( '.' );
-	const bool isPs = RE2::PartialMatch( f != std::string::npos ? name.substr( 0, f ) : name, RE2( R"reg(_ps(\d\db|\d\d|\dx|xx)$)reg"s ) );
+	const auto nameS = name.string();
+	const auto f = nameS.find_last_of( '.' );
+	const bool isPs = RE2::PartialMatch( f != std::string::npos ? nameS.substr( 0, f ) : nameS, RE2( R"reg(_ps(\d\db|\d\d|\dx|xx)$)reg"s ) );
 	const RE2 shouldMatch( isPs ? R"reg(\[ps(\d+\w?)\])reg"s : R"reg(\[vs(\d+\w?)\])reg"s );
 	const RE2 shouldNotMatch( isPs ? R"reg(\[vs\d+\w?\])reg"s : R"reg(\[ps\d+\w?\])reg"s );
 	const std::string version = !isPs && _version == "20b"sv ? "20" : _version;
@@ -216,10 +219,10 @@ bool Parser::ParseFile( const std::string& name, const std::string& _version, st
 		}
 	};
 
-	return ReadFile( name, includes, read );
+	return ReadFile( name, root, includes, read );
 }
 
-void Parser::WriteInclude( const std::string& fileName, const std::string& name, const std::vector<Combo>& static_c,
+void Parser::WriteInclude( const fs::path& fileName, const std::string& name, const std::vector<Combo>& static_c,
 							const std::vector<Combo>& dynamic_c, const std::vector<std::string>& skip )
 {
 	const bool isVs = RE2::PartialMatch( name, RE2( R"reg(_vs(\d\db|\d\d|\dx|xx)$)reg"s ) );
@@ -227,9 +230,9 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 		fs::permissions( fileName, fs::perms::owner_read | fs::perms::owner_write );
 
 	{
-		fs::create_directories( fs::path( fileName ).parent_path() );
+		fs::create_directories( fileName.parent_path() );
 		std::ofstream file( fileName, std::ios::trunc );
-		const auto& writeVars = [&]( const std::string_view& suffix, const std::vector<Combo>& vars, const std::string_view& ctor, uint32_t scale )
+		const auto& writeVars = [&]( const std::string_view& suffix, const std::vector<Combo>& vars, const std::string_view& ctor, uint32_t scale, bool dynamic )
 		{
 			file << "class "sv << name << "_"sv << suffix << "_Index\n{\n";
 			const bool hasIfdef = std::find_if( vars.begin(), vars.end(), []( const Combo& c ) { return c.initVal.empty(); } ) != vars.end();
@@ -272,6 +275,9 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 			{
 				if ( hasIfdef )
 					file << "\t\tAssert( "sv << std::accumulate( vars.begin(), vars.end(), ""s, []( const std::string& s, const Combo& c ) { return c.initVal.empty() ? ( s + " && m_b" + c.name ) : s; } ).substr( 4 ) << " );\n"sv;
+				const auto skipAsserts = ConfigurationProcessing::GenerateSkipAsserts( dynamic ? dynamic_c : static_c, skip );
+				for ( const auto& [msg, check] : skipAsserts )
+					file << "\t\tAssertMsg( !"sv << check << ", \"Invalid combo combination "sv << msg << "\" );\n"sv;
 				file << "\t\treturn "sv;
 				for ( const Combo& c : vars )
 				{
@@ -283,7 +289,7 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 			file << "\t}\n};\n\n"sv;
 
 			std::string suffixLower( suffix.length(), ' ' );
-			std::transform( suffix.begin(), suffix.end(), suffixLower.begin(), []( const char& c ) { return (char)std::tolower( c ); } );
+			std::ranges::transform( suffix.begin(), suffix.end(), suffixLower.begin(), []( const char& c ) { return (char)std::tolower( c ); } );
 			const std::string& pref = ( isVs ? "vsh_"s : "psh_"s ) + "forgot_to_set_"s + suffixLower + "_"s;
 			file << "#define shader"sv << suffix << "Test_"sv << name << " "sv;
 			if ( hasIfdef )
@@ -304,11 +310,11 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 		file << "#pragma once\n" R"(#include "shaderlib/cshader.h")" "\n"sv;
 
 		writeVars( "Static"sv, static_c, "IShaderShadow* pShaderShadow, IMaterialVar** params"sv,
-			std::accumulate( dynamic_c.begin(), dynamic_c.end(), 1U, []( uint32_t a, const Combo& b ) { return a * ( b.maxVal - b.minVal + 1 ); } ) );
+			std::accumulate( dynamic_c.begin(), dynamic_c.end(), 1U, []( uint32_t a, const Combo& b ) { return a * ( b.maxVal - b.minVal + 1 ); } ), false );
 
 		file << "\n"sv;
 
-		writeVars( "Dynamic"sv, dynamic_c, "IShaderDynamicAPI* pShaderAPI"sv, 1U );
+		writeVars( "Dynamic"sv, dynamic_c, "IShaderDynamicAPI* pShaderAPI"sv, 1U, true );
 
 		file << "\n"sv;
 
@@ -346,11 +352,11 @@ void Parser::WriteInclude( const std::string& fileName, const std::string& name,
 	fs::permissions( fileName, fs::perms::owner_read );
 }
 
-bool Parser::CheckCrc( const std::string& sourceFile, const std::string& name, uint32_t& crc32 )
+bool Parser::CheckCrc( const fs::path& sourceFile, const std::string& root, const std::string& name, uint32_t& crc32 )
 {
 	uint32_t binCrc = 0;
 	{
-		const auto filePath = fs::path( sourceFile ).parent_path() / "shaders"sv / "fxc"sv / ( name + ".vcs" );
+		const auto filePath = sourceFile.parent_path() / "shaders"sv / "fxc"sv / ( name + ".vcs" );
 		std::ifstream file( filePath, std::ios::binary );
 		if ( file )
 		{
@@ -365,7 +371,7 @@ bool Parser::CheckCrc( const std::string& sourceFile, const std::string& name, u
 	{
 		file += line + "\n";
 	};
-	if ( !ReadFile( sourceFile, includes, read ) )
+	if ( !ReadFile( sourceFile, root, includes, read ) )
 		return false;
 
 	crc32 = CRC32::ProcessSingleBuffer( file.c_str(), file.size() );

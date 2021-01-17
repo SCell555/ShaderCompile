@@ -14,17 +14,17 @@ namespace LZMA
 #pragma pack()
 	static_assert( sizeof( lzma_header_t ) == 17 );
 
-	static void* SzAlloc( void*, size_t size )
+	static inline void* SzAlloc( void*, size_t size )
 	{
 		return malloc( size );
 	}
-	static void SzFree( void*, void* address )
+	static inline void SzFree( void*, void* address )
 	{
 		free( address );
 	}
 	static ISzAlloc g_Alloc = { SzAlloc, SzFree };
 
-	SRes LzmaEncode( const Byte* inBuffer, size_t inSize, Byte* outBuffer, size_t outSize, size_t* outSizeProcessed )
+	static inline SRes LzmaEncode( const Byte* inBuffer, size_t inSize, Byte* outBuffer, size_t outSize, size_t* outSizeProcessed )
 	{
 		class CInStreamRam : public ISeqInStream
 		{
@@ -148,7 +148,7 @@ namespace LZMA
 		return res;
 	}
 
-	static uint8_t* Compress( uint8_t* pInput, size_t inputSize, size_t* pOutputSize )
+	static inline uint8_t* Compress( uint8_t* pInput, size_t inputSize, size_t* pOutputSize )
 	{
 		*pOutputSize = 0;
 
@@ -184,7 +184,7 @@ namespace LZMA
 		return pOutputBuffer;
 	}
 
-	uint8_t* OpportunisticCompress( uint8_t* pInput, size_t inputSize, size_t* pOutputSize )
+	static inline uint8_t* OpportunisticCompress( uint8_t* pInput, size_t inputSize, size_t* pOutputSize )
 	{
 		uint8_t* pRet = Compress( pInput, inputSize, pOutputSize );
 		if ( *pOutputSize >= inputSize )

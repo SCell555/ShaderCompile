@@ -1,6 +1,4 @@
-﻿#ifndef MOVINGAVERAGE_HPP
-#define MOVINGAVERAGE_HPP
-
+﻿#pragma once
 
 template <typename StorageType, uint32_t TBufferSize>
 class CUtlMovingAverage
@@ -47,6 +45,3 @@ private:
 
 	StorageType m_total;
 };
-
-
-#endif // MOVINGAVERAGE_HPP

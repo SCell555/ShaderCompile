@@ -9,6 +9,7 @@
 #include "d3dxfxc.h"
 
 #include "basetypes.h"
+#include "cfgprocessor.h"
 #include "cmdsink.h"
 #include "d3dcompiler.h"
 #include "gsl/gsl_narrow"
@@ -47,12 +48,6 @@ void FileCache::Clear()
 }
 
 FileCache fileCache;
-
-namespace Compiler
-{
-// The command that is intercepted by this namespace routines
-static constexpr const char s_pszCommand[] = "command";
-static constexpr size_t s_uCommandLen      = ARRAYSIZE( s_pszCommand );
 
 static struct DxIncludeImpl final : public ID3DInclude
 {
@@ -107,49 +102,22 @@ protected:
 };
 
 
-//
-// Completely mimic the behaviour of "fxc.exe" in the specific cases related
-// to shader compilations.
-//
-// @param pCommand       the command in form
-//		"fxc.exe /DSHADERCOMBO=1 /DTOTALSHADERCOMBOS=4 /DCENTROIDMASK=0 /DNUMDYNAMICCOMBOS=4 /DFLAGS=0x0 /DNUM_BONES=1 /Dmain=main /Emain /Tvs_2_0 /DSHADER_MODEL_VS_2_0=1 /D_X360=1 /nologo /Foshader.o debugdrawenvmapmask_vs20.fxc>output.txt 2>&1"
-//
-void ExecuteCommand( const char* pCommand, CmdSink::IResponse* &pResponse, unsigned long flags )
+void Compiler::ExecuteCommand( const CfgProcessor::ComboBuildCommand& pCommand, CmdSink::IResponse* &pResponse, unsigned int flags )
 {
-	// Expect that the command passed is exactly "fxc.exe"
-	Assert( !strncmp( pCommand, s_pszCommand, s_uCommandLen ) );
-	pCommand += s_uCommandLen;
-
 	// Macros to be defined for D3DX
 	std::vector<D3D_SHADER_MACRO> macros;
-
-	const char* curIter = pCommand;
-	char const* pszFilename = curIter;
-	curIter += strlen( curIter ) + 1;
-	char const* szShaderModel = curIter;
-	curIter += strlen( curIter ) + 1;
-	while ( *curIter )
-	{
-		D3D_SHADER_MACRO macro;
-		macro.Name = curIter;
-		curIter += strlen( curIter ) + 1;
-		macro.Definition = curIter;
-		curIter += strlen( curIter ) + 1;
-		macros.emplace_back( std::move( macro ) );
-	}
-
-	// Add a NULL-terminator
-	macros.emplace_back( D3D_SHADER_MACRO { nullptr, nullptr } );
+	macros.resize( pCommand.defines.size() + 1 );
+	std::ranges::transform( pCommand.defines, macros.begin(), []( const auto& d ) { return D3D_SHADER_MACRO{ d.first.data(), d.second.data() }; } );
 
 	ID3DBlob* pShader        = nullptr; // NOTE: Must release the COM interface later
 	ID3DBlob* pErrorMessages = nullptr; // NOTE: Must release COM interface later
 
 	LPCVOID lpcvData = nullptr;
 	UINT numBytes    = 0;
-	HRESULT hr       = s_incDxImpl.Open( D3D_INCLUDE_LOCAL, pszFilename, nullptr, &lpcvData, &numBytes );
+	HRESULT hr       = s_incDxImpl.Open( D3D_INCLUDE_LOCAL, pCommand.fileName.data(), nullptr, &lpcvData, &numBytes );
 	if ( !FAILED( hr ) )
 	{
-		hr = D3DCompile( lpcvData, numBytes, pszFilename, macros.data(), &s_incDxImpl, "main", szShaderModel, flags, 0, &pShader, &pErrorMessages );
+		hr = D3DCompile( lpcvData, numBytes, pCommand.fileName.data(), macros.data(), &s_incDxImpl, "main", pCommand.shaderModel.data(), flags, 0, &pShader, &pErrorMessages );
 
 		// Close the file
 		s_incDxImpl.Close( lpcvData );
@@ -157,4 +125,3 @@ void ExecuteCommand( const char* pCommand, CmdSink::IResponse* &pResponse, unsig
 
 	pResponse = new( std::nothrow ) CResponse( pShader, pErrorMessages, hr );
 }
-} // namespace InterceptFxc

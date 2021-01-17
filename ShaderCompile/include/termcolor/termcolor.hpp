@@ -101,6 +101,7 @@ namespace termcolor
             }
 
             constexpr operator const char*() const { return buffer; }
+            constexpr const char* get() const { return buffer; }
 
         private:
             static constexpr void esc(uint8_t c, char* out, char delimiter) noexcept

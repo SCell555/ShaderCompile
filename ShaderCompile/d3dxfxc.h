@@ -43,7 +43,12 @@ protected:
 
 extern FileCache fileCache;
 
+namespace CfgProcessor
+{
+	struct ComboBuildCommand;
+}
+
 namespace Compiler
 {
-	void ExecuteCommand( const char* pCommand, CmdSink::IResponse* &ppResponse, unsigned long flags );
+	void ExecuteCommand( const CfgProcessor::ComboBuildCommand& pCommand, CmdSink::IResponse* &ppResponse, unsigned int flags );
 }; // namespace InterceptFxc

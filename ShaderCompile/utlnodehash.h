@@ -68,7 +68,7 @@ public:
 		}
 	}
 
-	__forceinline const CUtlIntrusiveDList<T>& Chain( int nChain ) { return m_HashChains[nChain]; }
+	[[nodiscard]] const CUtlIntrusiveDList<T>& Chain( int nChain ) { return m_HashChains[nChain]; }
 
 	~CUtlNodeHash()
 	{
