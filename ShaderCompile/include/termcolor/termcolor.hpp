@@ -100,8 +100,8 @@ namespace termcolor
                 buffer[19] = '\0';
             }
 
-            constexpr operator const char*() const { return buffer; }
-            constexpr const char* get() const { return buffer; }
+            constexpr operator const char*() const noexcept { return buffer; }
+            constexpr const char* get() const noexcept { return buffer; }
 
         private:
             static constexpr void esc(uint8_t c, char* out, char delimiter) noexcept

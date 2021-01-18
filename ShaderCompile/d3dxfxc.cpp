@@ -6,14 +6,20 @@
 //
 //=============================================================================//
 
+#define WIN32_LEAN_AND_MEAN
+#define NOWINRES
+#define NOSERVICE
+#define NOMCX
+#define NOIME
+#define NOMINMAX
+
 #include "d3dxfxc.h"
 
 #include "basetypes.h"
 #include "cfgprocessor.h"
 #include "cmdsink.h"
 #include "d3dcompiler.h"
-#include "gsl/gsl_narrow"
-#include <span>
+#include "gsl/narrow"
 #include <malloc.h>
 #include <vector>
 
@@ -107,7 +113,7 @@ void Compiler::ExecuteCommand( const CfgProcessor::ComboBuildCommand& pCommand, 
 	// Macros to be defined for D3DX
 	std::vector<D3D_SHADER_MACRO> macros;
 	macros.resize( pCommand.defines.size() + 1 );
-	std::ranges::transform( pCommand.defines, macros.begin(), []( const auto& d ) { return D3D_SHADER_MACRO{ d.first.data(), d.second.data() }; } );
+	std::transform( pCommand.defines.cbegin(), pCommand.defines.cend(), macros.begin(), []( const auto& d ) { return D3D_SHADER_MACRO{ d.first.data(), d.second.data() }; } );
 
 	ID3DBlob* pShader        = nullptr; // NOTE: Must release the COM interface later
 	ID3DBlob* pErrorMessages = nullptr; // NOTE: Must release COM interface later

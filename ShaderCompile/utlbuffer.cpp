@@ -15,7 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include "gsl/gsl_narrow"
+#include "gsl/narrow"
 
 //-----------------------------------------------------------------------------
 // Character conversions for C strings

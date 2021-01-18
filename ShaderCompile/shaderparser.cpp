@@ -6,6 +6,7 @@
 #define NOIME
 #define NOMINMAX
 
+#include <bit>
 #include <fstream>
 #include <filesystem>
 #include <iostream>
@@ -16,9 +17,16 @@
 #include "termcolor/style.hpp"
 #include "termcolors.hpp"
 #include "re2/re2.h"
-#include "gsl/gsl_narrow"
+#include "gsl/narrow"
 #include "CRC32.hpp"
 #include "strmanip.hpp"
+
+// gcc9 for some reason doesn't have this
+template <class T, std::enable_if_t<std::is_unsigned_v<T>, int> = 0>
+[[nodiscard]] constexpr T bit_width( const T _Val ) noexcept
+{
+	return static_cast<T>( std::numeric_limits<T>::digits - std::countl_zero( _Val ) );
+}
 
 namespace ConfigurationProcessing
 {
@@ -44,21 +52,6 @@ namespace r
 	static const RE2 c_comment_end( R"reg(\*\/(.*)$)reg");
 	static const RE2 c_inline_comment( R"reg(^(.*)\/\*.*?\*\/(.*))reg");
 	static const RE2 cpp_comment( R"reg(^(.*)\/\/$)reg");
-}
-
-static uint32_t lzcnt( uint32_t n )
-{
-	uint32_t r = 0;
-	if ( n == 0 )
-		return 32;
-
-	if (n <= 0x0000FFFF) { r += 16; n <<= 16; }
-	if (n <= 0x00FFFFFF) { r += 8;  n <<= 8; }
-	if (n <= 0x0FFFFFFF) { r += 4;  n <<= 4; }
-	if (n <= 0x3FFFFFFF) { r += 2;  n <<= 2; }
-	if (n <= 0x7FFFFFFF) { r += 1;  n <<= 1; }
-
-	return r;
 }
 
 Parser::Combo::Combo( const std::string& name, int32_t min, int32_t max, const std::string& init_val ) : name( name ), minVal( min ), maxVal( max ), initVal( init_val )
@@ -237,7 +230,7 @@ void Parser::WriteInclude( const fs::path& fileName, const std::string& name, co
 			file << "class "sv << name << "_"sv << suffix << "_Index\n{\n";
 			const bool hasIfdef = std::find_if( vars.begin(), vars.end(), []( const Combo& c ) { return c.initVal.empty(); } ) != vars.end();
 			for ( const Combo& c : vars )
-				file << "\tunsigned int m_n"sv << c.name << " : "sv << ( 32 - lzcnt( c.maxVal - c.minVal + 1 ) ) << ";\n"sv;
+				file << "\tunsigned int m_n"sv << c.name << " : "sv << bit_width( uint32_t( c.maxVal - c.minVal + 1 ) ) << ";\n"sv;
 			if ( hasIfdef )
 				file << "#ifdef _DEBUG\n"sv;
 			for ( const Combo& c : vars )
@@ -289,7 +282,7 @@ void Parser::WriteInclude( const fs::path& fileName, const std::string& name, co
 			file << "\t}\n};\n\n"sv;
 
 			std::string suffixLower( suffix.length(), ' ' );
-			std::ranges::transform( suffix.begin(), suffix.end(), suffixLower.begin(), []( const char& c ) { return (char)std::tolower( c ); } );
+			std::transform( suffix.begin(), suffix.end(), suffixLower.begin(), []( const char& c ) { return (char)std::tolower( c ); } );
 			const std::string& pref = ( isVs ? "vsh_"s : "psh_"s ) + "forgot_to_set_"s + suffixLower + "_"s;
 			file << "#define shader"sv << suffix << "Test_"sv << name << " "sv;
 			if ( hasIfdef )

@@ -20,15 +20,15 @@
 #include "DbgHelp.h"
 #include "d3dcompiler.h"
 #include <atomic>
-#include <concepts>
 #include <chrono>
 #include <cstdlib>
 #include <future>
 #include <filesystem>
-#include <iomanip>
 #include <regex>
 #include <set>
 #include <thread>
+#include <immintrin.h>
+#include <inttypes.h>
 
 #include "basetypes.h"
 #include "cfgprocessor.h"
@@ -40,7 +40,7 @@
 
 #include "ezOptionParser.hpp"
 #include "termcolor/style.hpp"
-#include "gsl/gsl_narrow"
+#include "gsl/narrow"
 #include "robin_hood.h"
 
 #include "CRC32.hpp"
@@ -69,6 +69,7 @@ extern "C" {
 namespace fs = std::filesystem;
 namespace chrono = std::chrono;
 using std::chrono::duration_cast;
+using namespace std::literals;
 
 using Clock = chrono::high_resolution_clock;
 static fs::path g_pShaderPath;
@@ -77,6 +78,9 @@ static Clock::time_point g_flStartTime;
 static bool g_bVerbose	= false;
 static bool g_bVerbose2 = false;
 static bool g_bFastFail = false;
+
+static constexpr const std::string_view lineRewind = "\r\033[2K"sv;
+static constexpr const std::string_view endLine = "\r"sv;
 
 struct ShaderInfo_t
 {
@@ -271,38 +275,24 @@ public:
 	void unlock() noexcept {}
 };
 
-template <class T>
-concept Mutex = requires( T a )
-{
-	{ a.lock() } -> std::convertible_to<void>;
-	{ a.unlock() } -> std::convertible_to<void>;
-};
-
-enum Mode
-{
-	eSingleThreaded = 0,
-	eMultiThreaded  = 1
-};
-
 // A special object that makes single-threaded code incur no penalties
 // and multithreaded code to be synchronized properly.
 template <auto& mtx>
-	requires Mutex<std::decay_t<decltype( mtx )>>
 class CSwitchableMutex
 {
 	using mtx_type = std::decay_t<decltype( mtx )>;
 public:
-	FORCEINLINE explicit CSwitchableMutex() noexcept : m_pUseMtx( nullptr ) {}
+	explicit CSwitchableMutex() noexcept : m_pUseMtx( nullptr ) {}
 
-	FORCEINLINE void SetThreadedMode( Mode eMode ) noexcept { m_pUseMtx = eMode ? &mtx : nullptr; }
+	void EnableThreadedMode() noexcept { m_pUseMtx = &mtx; }
 
-	FORCEINLINE void Lock()
+	void lock()
 	{
 		if ( mtx_type* pUseMtx = m_pUseMtx )
 			pUseMtx->lock();
 	}
 
-	FORCEINLINE void Unlock()
+	void unlock()
 	{
 		if ( mtx_type* pUseMtx = m_pUseMtx )
 			pUseMtx->unlock();
@@ -322,13 +312,9 @@ static CSwitchableMutex<Private::g_mtxSyncObjMT> g_mtxGlobal;
 static CSwitchableMutex<Private::g_mtxSyncObjMT2> g_mtxMsgReport;
 }; // namespace Threading
 
-// Access to global data should be synchronized by these global locks
-#define GLOBAL_DATA_MTX_LOCK()   Threading::g_mtxGlobal.Lock()
-#define GLOBAL_DATA_MTX_UNLOCK() Threading::g_mtxGlobal.Unlock()
-
 static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine, std::string_view szName )
 {
-	Threading::g_mtxMsgReport.Lock();
+	std::lock_guard guard{ Threading::g_mtxMsgReport };
 	auto& msg = g_CompilerMsg[szName];
 	char* dupMsg = _strdup( szMsgLine );
 	char *start = dupMsg, *end = dupMsg + strlen( dupMsg );
@@ -352,7 +338,6 @@ static void ErrMsgDispatchMsgLine( const char* szCommand, const char* szMsgLine,
 			msg.error[start2].SetMsgReportedCommand( szCommand );
 	}
 	free( dupMsg );
-	Threading::g_mtxMsgReport.Unlock();
 }
 
 static void ShaderHadErrorDispatchInt( std::string_view szShader )
@@ -449,18 +434,17 @@ static void OutputDynamicCombo( size_t& pnTotalFlushedSize, CUtlBuffer& pDynamic
 
 static fs::path GetVCSFilenames( const ShaderInfo_t& si )
 {
-	using namespace std::literals;
 	auto path = g_pShaderPath / "shaders"sv / "fxc"sv;
 
 	fs::directory_entry status( path );
 	if ( !status.exists() )
 	{
-		std::cout << clr::pinkish << "mkdir " << path << clr::reset;
+		std::cout << clr::pinkish << "mkdir "sv << path << clr::reset;
 		// doh. . need to make the directory that the vcs file is going to go into.
 		std::error_code c;
 		fs::create_directories( path, c );
 		if ( c )
-			std::cout << clr::red << " Failed! " << c.message() << clr::reset << std::endl;
+			std::cout << clr::red << " Failed! "sv << c.message() << clr::reset << std::endl;
 		else
 			std::cout << std::endl;
 	}
@@ -476,11 +460,11 @@ static fs::path GetVCSFilenames( const ShaderInfo_t& si )
 		if ( ( status.status().permissions() & ( fs::perms::owner_read | fs::perms::owner_write ) ) != ( fs::perms::owner_read | fs::perms::owner_write ) )
 		{
 			// It isn't writable. . we'd better change its permissions (or check it out possibly)
-			std::cout << clr::pinkish << "Warning: making " << clr::red << path << clr::pinkish << " writable!" << clr::reset;
+			std::cout << clr::pinkish << "Warning: making "sv << clr::red << path << clr::pinkish << " writable!"sv << clr::reset;
 			std::error_code c;
 			fs::permissions( status, fs::perms::owner_read | fs::perms::owner_write, c );
 			if ( c )
-				std::cout << clr::red << " Failed! " << c.message() << clr::reset << std::endl;
+				std::cout << clr::red << " Failed! "sv << c.message() << clr::reset << std::endl;
 			else
 				std::cout << std::endl;
 		}
@@ -524,21 +508,21 @@ static void WriteShaderFiles( std::string_view pShaderName )
 	//
 	// Progress indication
 	//
-	std::cout << "\r\033[2K" << szShaderFileOperation << " " << ( bShaderFailed ? clr::red : clr::green ) << pShaderName << clr::reset << "...\r";
+	std::cout << lineRewind << szShaderFileOperation << " "sv << ( bShaderFailed ? clr::red : clr::green ) << pShaderName << clr::reset << "..."sv << endLine;
 
 	//
 	// Retrieve the data we are going to operate on
 	// from global variables under lock.
 	//
-	GLOBAL_DATA_MTX_LOCK();
 	StaticComboNodeHash_t* pByteCodeArray;
+	ShaderInfo_t shaderInfo;
 	{
-		StaticComboNodeHash_t*& rp = g_ShaderByteCode[pShaderName]; // Get a static combo pointer, reset it as well
-		pByteCodeArray             = rp;
-		rp                         = nullptr;
+		std::lock_guard guard{ Threading::g_mtxGlobal };
+		StaticComboNodeHash_t*& rp	= g_ShaderByteCode[pShaderName]; // Get a static combo pointer, reset it as well
+		pByteCodeArray				= rp;
+		rp							= nullptr;
+		shaderInfo					= g_ShaderToShaderInfo[pShaderName];
 	}
-	ShaderInfo_t shaderInfo = g_ShaderToShaderInfo[pShaderName];
-	GLOBAL_DATA_MTX_UNLOCK();
 
 	if ( shaderInfo.m_pShaderName.empty() )
 		return;
@@ -552,7 +536,7 @@ static void WriteShaderFiles( std::string_view pShaderName )
 	{
 		std::error_code c;
 		fs::remove( path, c );
-		std::cout << "\r\033[2K" << clr::red << pShaderName << clr::reset << " " << FormatTimeShort( duration_cast<chrono::seconds>( Clock::now() - lastTime ).count() ) << std::endl;
+		std::cout << lineRewind << clr::red << pShaderName << clr::reset << " "sv << FormatTimeShort( duration_cast<chrono::seconds>( Clock::now() - lastTime ).count() ) << std::endl;
 		lastTime = Clock::now();
 		return;
 	}
@@ -561,7 +545,7 @@ static void WriteShaderFiles( std::string_view pShaderName )
 		return;
 
 	if ( g_bVerbose )
-		std::cout << "\033[2K" << std::showbase << pShaderName << ": " << clr::green << shaderInfo.m_nTotalShaderCombos << clr::reset << " combos, centroid mask: " << clr::green << std::hex << shaderInfo.m_CentroidMask << std::dec << clr::reset << ", numDynamicCombos: " << clr::green << shaderInfo.m_nDynamicCombos << clr::reset << std::endl;
+		std::cout << "\r"sv << std::showbase << pShaderName << ": "sv << clr::green << shaderInfo.m_nTotalShaderCombos << clr::reset << " combos, centroid mask: "sv << clr::green << std::hex << shaderInfo.m_CentroidMask << std::dec << clr::reset << ", numDynamicCombos: "sv << clr::green << shaderInfo.m_nDynamicCombos << clr::reset << std::endl;
 
 	//
 	// Static combo headers
@@ -686,7 +670,7 @@ static void WriteShaderFiles( std::string_view pShaderName )
 	// Finalize, free memory
 	delete pByteCodeArray;
 
-	std::cout << "\r\033[2K" << clr::green << pShaderName << clr::reset << " " << FormatTimeShort( duration_cast<chrono::seconds>( Clock::now() - lastTime ).count() ) << std::endl;
+	std::cout << lineRewind << clr::green << pShaderName << clr::reset << " "sv << FormatTimeShort( duration_cast<chrono::seconds>( Clock::now() - lastTime ).count() ) << std::endl;
 	lastTime = Clock::now();
 }
 
@@ -694,10 +678,13 @@ static void WriteShaderFiles( std::string_view pShaderName )
 // return the length of the package.
 static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEntry, uint64_t nComboOfEntry, CUtlBuffer& pBuf )
 {
-	GLOBAL_DATA_MTX_LOCK();
-	CStaticCombo* pStComboRec             = StaticComboFromDict( pEntry->m_szName, nComboOfEntry );
-	StaticComboNodeHash_t* pByteCodeArray = g_ShaderByteCode[pEntry->m_szName];
-	GLOBAL_DATA_MTX_UNLOCK();
+	CStaticCombo* pStComboRec;
+	StaticComboNodeHash_t* pByteCodeArray;
+	{
+		std::lock_guard guard{ Threading::g_mtxGlobal };
+		pStComboRec    = StaticComboFromDict( pEntry->m_szName, nComboOfEntry );
+		pByteCodeArray = g_ShaderByteCode[pEntry->m_szName];
+	}
 
 	size_t nBytesWritten = 0;
 
@@ -724,41 +711,42 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 	static std::string_view s_lastShader = pEntry->m_szName;
 	const Clock::time_point fCurTime = Clock::now();
 
-	GLOBAL_DATA_MTX_LOCK();
-	if ( pStComboRec )
 	{
-		CStaticCombo *pCombo = pByteCodeArray->FindByKey( nComboOfEntry );
-		pByteCodeArray->DeleteByKey( nComboOfEntry );
-		delete pCombo;
-	}
-	if ( duration_cast<chrono::seconds>( fCurTime - s_fLastInfoTime ).count() != 0 )
-	{
-		if ( s_lastShader.data() != pEntry->m_szName.data() )
+		std::lock_guard guard{ Threading::g_mtxGlobal };
+		if ( pStComboRec )
 		{
-			s_averageProcess.Reset();
-			s_lastShader = pEntry->m_szName;
-			s_nLastEntry = nComboOfEntry;
+			CStaticCombo *pCombo = pByteCodeArray->FindByKey( nComboOfEntry );
+			pByteCodeArray->DeleteByKey( nComboOfEntry );
+			delete pCombo;
 		}
+		if ( duration_cast<chrono::seconds>( fCurTime - s_fLastInfoTime ).count() != 0 )
+		{
+			if ( s_lastShader.data() != pEntry->m_szName.data() )
+			{
+				s_averageProcess.Reset();
+				s_lastShader = pEntry->m_szName;
+				s_nLastEntry = nComboOfEntry;
+			}
 
-		s_averageProcess.PushValue( s_nLastEntry - nComboOfEntry );
-		s_nLastEntry = nComboOfEntry;
-		const auto avg = s_averageProcess.GetAverage();
-		std::cout << "\r\033[2KCompiling " << ( g_ShaderHadError.contains( pEntry->m_szName ) ? clr::red : clr::green ) << pEntry->m_szName << clr::reset << " [" << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining] "
-			<< FormatTimeShort( duration_cast<chrono::seconds>( fCurTime - g_flStartTime ).count() ) << " elapsed ("<< clr::green2 << avg << clr::reset << " c/s, est. remaining " << FormatTimeShort( nComboOfEntry / std::max( avg, 1ULL ) ) << ")\r";
-		s_fLastInfoTime = fCurTime;
+			s_averageProcess.PushValue( s_nLastEntry - nComboOfEntry );
+			s_nLastEntry = nComboOfEntry;
+			const auto avg = s_averageProcess.GetAverage();
+			std::cout << lineRewind << "Compiling "sv << ( g_ShaderHadError.contains( pEntry->m_szName ) ? clr::red : clr::green ) << pEntry->m_szName << clr::reset << " ["sv << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining] "sv
+				<< FormatTimeShort( duration_cast<chrono::seconds>( fCurTime - g_flStartTime ).count() ) << " elapsed ("sv << clr::green2 << avg << clr::reset << " c/s, est. remaining "sv << FormatTimeShort( nComboOfEntry / std::max<uint64_t>( avg, 1 ) ) << ")"sv << endLine;
+			s_fLastInfoTime = fCurTime;
+		}
 	}
-	GLOBAL_DATA_MTX_UNLOCK();
 
 	return nBytesWritten;
 }
 
-template <Threading::Mutex TMutexType>
+template <typename TMutexType>
 class CWorkerAccumState
 {
 public:
-	explicit CWorkerAccumState( TMutexType* pMutex, uint32_t iFlags ) noexcept
-		: m_pMutex( pMutex ), m_iFirstCommand( 0 ), m_iNextCommand( 0 ), m_iEndCommand( 0 )
-		, m_iLastFinished( 0 ), m_hCombo( nullptr ), m_bBreak( false ), m_iFlags( iFlags ) {}
+	explicit CWorkerAccumState( uint32_t iFlags ) noexcept
+		: m_iFirstCommand( 0 ), m_iNextCommand( 0 ), m_iEndCommand( 0 )
+		, m_iLastFinished( 0 ), m_hCombo( nullptr ), m_iFlags( iFlags ) {}
 
 	void RangeBegin( uint64_t iFirstCommand, uint64_t iEndCommand );
 	void RangeFinished();
@@ -768,13 +756,15 @@ public:
 
 	void Run( uint32_t i )
 	{
-		m_arrSubProcessInfos.clear();
 		m_arrSubProcessInfos.reserve( i );
+
+		std::vector<std::thread> threads;
+		threads.reserve( i );
 
 		while ( i-- > 0 )
 		{
 			++m_nActive;
-			m_threads.emplace_back( DoExecute, this );
+			threads.emplace_back( DoExecute, this );
 		}
 
 		constexpr const std::chrono::milliseconds sleepTime{ 250 };
@@ -784,48 +774,46 @@ public:
 			std::this_thread::sleep_for( sleepTime );
 		}
 
-		std::ranges::for_each( m_threads, []( std::jthread& t ) { t.join(); } );
-		m_threads.clear();
+		std::for_each( threads.begin(), threads.end(), []( std::thread& t ) { if ( t.joinable() ) t.join(); } );
+		m_arrSubProcessInfos.clear();
 	}
 
 	void OnProcessST();
 
 	void Stop() noexcept
 	{
-		m_bBreak = true;
-		std::ranges::for_each( m_threads, []( std::jthread& t ) { t.request_stop(); } );
+		m_bBreak.store( true, std::memory_order_release );
 	}
 
 private:
-	std::vector<std::jthread> m_threads;
-	std::atomic<int> m_nActive;
-	TMutexType* m_pMutex;
+	std::atomic<bool>			m_bBreak;
+	std::atomic<int>			m_nActive;
+	TMutexType					m_Mutex;
 
-	static void DoExecute( std::stop_token token, CWorkerAccumState* pThis )
+	static void DoExecute( CWorkerAccumState* pThis )
 	{
-		while ( pThis->OnProcess( token ) )
+		while ( pThis->OnProcess() )
 			continue;
 
 		--pThis->m_nActive;
 	}
 
-	std::vector<uint64_t> m_arrSubProcessInfos;
-	uint64_t m_iFirstCommand;
-	uint64_t m_iNextCommand;
-	uint64_t m_iEndCommand;
+	std::vector<uint64_t>	m_arrSubProcessInfos;
+	uint64_t				m_iFirstCommand;
+	uint64_t				m_iNextCommand;
+	uint64_t				m_iEndCommand;
 
-	uint64_t m_iLastFinished;
+	uint64_t				m_iLastFinished;
 
 	CfgProcessor::ComboHandle m_hCombo;
 
-	bool m_bBreak;
-	const uint32_t m_iFlags;
+	const uint32_t			m_iFlags;
 
-	bool OnProcess( std::stop_token stopToken );
+	bool OnProcess();
 	void TryToPackageData( uint64_t iCommandNumber );
 };
 
-template <Threading::Mutex TMutexType>
+template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::RangeBegin( uint64_t iFirstCommand, uint64_t iEndCommand )
 {
 	m_iFirstCommand = iFirstCommand;
@@ -836,14 +824,14 @@ void CWorkerAccumState<TMutexType>::RangeBegin( uint64_t iFirstCommand, uint64_t
 	CfgProcessor::Combo_GetNext( m_iNextCommand, m_hCombo, m_iEndCommand );
 }
 
-template <Threading::Mutex TMutexType>
+template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::RangeFinished()
 {
 	// Finish packaging data
 	TryToPackageData( m_iEndCommand - 1 );
 }
 
-template <Threading::Mutex TMutexType>
+template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::ExecuteCompileCommand( CfgProcessor::ComboHandle hCombo )
 {
 	CmdSink::IResponse* pResponse = nullptr;
@@ -854,7 +842,7 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommand( CfgProcessor::ComboHa
 		{
 			char chReadBuf[4096];
 			Combo_FormatCommandHumanReadable( hCombo, chReadBuf );
-			std::cout << "running: \"" << clr::green << chReadBuf << clr::reset << "\"" << std::endl;
+			std::cout << "running: \""sv << clr::green << chReadBuf << clr::reset << "\""sv << endLine;
 		}
 	}
 
@@ -865,7 +853,7 @@ void CWorkerAccumState<TMutexType>::ExecuteCompileCommand( CfgProcessor::ComboHa
 
 static void StopCommandRange();
 
-template <Threading::Mutex TMutexType>
+template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHandle hCombo, CmdSink::IResponse* pResponse )
 {
 	Assert( pResponse );
@@ -877,17 +865,15 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 
 	if ( pResponse->Succeeded() )
 	{
-		GLOBAL_DATA_MTX_LOCK();
+		std::lock_guard guard{ Threading::g_mtxGlobal };
 		const uint64_t nStComboIdx = iComboIndex / pEntryInfo->m_numDynamicCombos;
 		const uint64_t nDyComboIdx = iComboIndex - ( nStComboIdx * pEntryInfo->m_numDynamicCombos );
 		StaticComboFromDictAdd( pEntryInfo->m_szName, nStComboIdx )->AddDynamicCombo( nDyComboIdx, pResponse->GetResultBuffer(), pResponse->GetResultBufferLen() );
-		GLOBAL_DATA_MTX_UNLOCK();
 	}
 	else // Tell the master that this shader failed
 	{
-		GLOBAL_DATA_MTX_LOCK();
+		std::lock_guard guard{ Threading::g_mtxGlobal };
 		ShaderHadErrorDispatchInt( pEntryInfo->m_szName );
-		GLOBAL_DATA_MTX_UNLOCK();
 	}
 
 	// Process listing even if the shader succeeds for warnings
@@ -897,7 +883,7 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 		char chUnreportedListing[0xFF];
 		if ( !szListing )
 		{
-			sprintf_s( chUnreportedListing, "%s(0,0): error 0000: Compiler failed without error description. Command number %llu", pEntryInfo->m_szShaderFileName.data(), iCommandNumber );
+			sprintf_s( chUnreportedListing, sizeof( chUnreportedListing ), "%s(0,0): error 0000: Compiler failed without error description. Command number %" PRIu64, pEntryInfo->m_szShaderFileName.data(), iCommandNumber );
 			szListing = chUnreportedListing;
 		}
 
@@ -915,10 +901,10 @@ void CWorkerAccumState<TMutexType>::HandleCommandResponse( CfgProcessor::ComboHa
 	TryToPackageData( iCommandNumber );
 }
 
-template <Threading::Mutex TMutexType>
+template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 {
-	m_pMutex->lock();
+	std::unique_lock guard{ m_Mutex };
 
 	uint64_t iFinishedByNow = iCommandNumber + 1;
 
@@ -936,13 +922,10 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 	if ( iFinishedByNow > m_iLastFinished )
 	{
 		m_iLastFinished = iFinishedByNow;
-		m_pMutex->unlock();
+		guard.unlock();
 	}
 	else
-	{
-		m_pMutex->unlock();
 		return;
-	}
 
 	CfgProcessor::ComboHandle hChBegin = CfgProcessor::Combo_GetCombo( iLastFinished );
 	CfgProcessor::ComboHandle hChEnd   = CfgProcessor::Combo_GetCombo( iFinishedByNow );
@@ -964,9 +947,11 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 		if ( nPackedLength )
 		{
 			// Packed buffer
-			GLOBAL_DATA_MTX_LOCK();
-			uint8_t* pCodeBuffer = StaticComboFromDictAdd( pInfoBegin->m_szName, nComboBegin )->AllocPackedCodeBlock( nPackedLength );
-			GLOBAL_DATA_MTX_UNLOCK();
+			uint8_t* pCodeBuffer;
+			{
+				std::lock_guard guard{ Threading::g_mtxGlobal };
+				pCodeBuffer = StaticComboFromDictAdd( pInfoBegin->m_szName, nComboBegin )->AllocPackedCodeBlock( nPackedLength );
+			}
 
 			if ( pCodeBuffer )
 			{
@@ -991,35 +976,39 @@ void CWorkerAccumState<TMutexType>::TryToPackageData( uint64_t iCommandNumber )
 	Combo_Free( hChEnd );
 }
 
-template <Threading::Mutex TMutexType>
-bool CWorkerAccumState<TMutexType>::OnProcess( std::stop_token stopToken )
+template <typename TMutexType>
+bool CWorkerAccumState<TMutexType>::OnProcess()
 {
-	m_pMutex->lock();
-	CfgProcessor::ComboHandle hThreadCombo = m_hCombo ? Combo_Alloc( m_hCombo ) : nullptr;
-	m_arrSubProcessInfos.resize( m_arrSubProcessInfos.size() + 1 );
-	auto iCurrentId = &m_arrSubProcessInfos.back();
-	m_pMutex->unlock();
+	CfgProcessor::ComboHandle hThreadCombo;
+	uint64_t* iCurrentId;
+	{
+		std::lock_guard guard{ m_Mutex };
+		hThreadCombo = m_hCombo ? Combo_Alloc( m_hCombo ) : nullptr;
+		m_arrSubProcessInfos.resize( m_arrSubProcessInfos.size() + 1 );
+		iCurrentId = &m_arrSubProcessInfos.back();
+	}
 
 	uint64_t iThreadCommand = ~0ULL;
 
 	for ( ;; )
 	{
-		m_pMutex->lock();
-		if ( m_hCombo )
 		{
-			Combo_Assign( hThreadCombo, m_hCombo );
-			*iCurrentId = Combo_GetCommandNum( hThreadCombo );
-			Combo_GetNext( iThreadCommand, m_hCombo, m_iEndCommand );
+			std::lock_guard guard{ m_Mutex };
+			if ( m_hCombo )
+			{
+				Combo_Assign( hThreadCombo, m_hCombo );
+				*iCurrentId = Combo_GetCommandNum( hThreadCombo );
+				Combo_GetNext( iThreadCommand, m_hCombo, m_iEndCommand );
+			}
+			else
+			{
+				Combo_Free( hThreadCombo );
+				iThreadCommand = ~0ULL;
+				*iCurrentId = ~0ULL;
+			}
 		}
-		else
-		{
-			Combo_Free( hThreadCombo );
-			iThreadCommand = ~0ULL;
-			*iCurrentId  = ~0ULL;
-		}
-		m_pMutex->unlock();
 
-		if ( hThreadCombo && !stopToken.stop_requested() )
+		if ( hThreadCombo && !m_bBreak.load( std::memory_order_acquire ) )
 			ExecuteCompileCommand( hThreadCombo );
 		else
 			break;
@@ -1029,10 +1018,10 @@ bool CWorkerAccumState<TMutexType>::OnProcess( std::stop_token stopToken )
 	return false;
 }
 
-template <Threading::Mutex TMutexType>
+template <typename TMutexType>
 void CWorkerAccumState<TMutexType>::OnProcessST()
 {
-	while ( m_hCombo && !m_bBreak )
+	while ( m_hCombo && !m_bBreak.load( std::memory_order_acquire ) )
 	{
 		ExecuteCompileCommand( m_hCombo );
 
@@ -1077,31 +1066,14 @@ protected:
 	void Startup( uint32_t flags );
 	void Shutdown();
 
-	//
-	// Multi-threaded section
-	//
-	struct MT
+	using MT = CWorkerAccumState<std::mutex>;
+	using ST = CWorkerAccumState<Threading::null_mutex>;
+
+	union
 	{
-		MT() : pWorkerObj( nullptr ) {}
-
-		std::mutex mtx;
-
-		using WorkerClass_t = CWorkerAccumState<std::mutex>;
-		WorkerClass_t* pWorkerObj;
-	} m_MT;
-
-	//
-	// Single-threaded section
-	//
-	struct ST
-	{
-		ST() : pWorkerObj( nullptr ) {}
-
-		Threading::null_mutex mtx;
-
-		using WorkerClass_t = CWorkerAccumState<Threading::null_mutex>;
-		WorkerClass_t* pWorkerObj;
-	} m_ST;
+		MT* m_MT;
+		ST* m_ST;
+	};
 
 	const uint32_t m_nThreads;
 	bool m_bStopped = false;
@@ -1118,51 +1090,45 @@ void ProcessCommandRange_Singleton::Startup( uint32_t flags )
 	if ( m_nThreads > 1 )
 	{
 		// Make sure that our mutex is in multi-threaded mode
-		Threading::g_mtxGlobal.SetThreadedMode( Threading::eMultiThreaded );
-		Threading::g_mtxMsgReport.SetThreadedMode( Threading::eMultiThreaded );
+		Threading::g_mtxGlobal.EnableThreadedMode();
+		Threading::g_mtxMsgReport.EnableThreadedMode();
 
-		m_MT.pWorkerObj = new MT::WorkerClass_t( &m_MT.mtx, flags );
+		m_MT = new MT( flags );
 	}
-	else
-		// Otherwise initialize single-threaded mode
-		m_ST.pWorkerObj = new ST::WorkerClass_t( &m_ST.mtx, flags );
+	else // Otherwise initialize single-threaded mode
+		m_ST = new ST( flags );
 }
 
 void ProcessCommandRange_Singleton::Shutdown()
 {
-	if ( m_MT.pWorkerObj )
-		delete m_MT.pWorkerObj;
-	else if ( m_ST.pWorkerObj )
-		delete m_ST.pWorkerObj;
+	if ( m_nThreads > 1 )
+		delete m_MT;
+	else
+		delete m_ST;
 }
 
 void ProcessCommandRange_Singleton::Stop()
 {
 	m_bStopped = true;
-	if ( m_MT.pWorkerObj )
-		m_MT.pWorkerObj->Stop();
+	if ( m_nThreads > 1 )
+		m_MT->Stop();
 	else
-		m_ST.pWorkerObj->Stop();
+		m_ST->Stop();
 }
-
 
 void ProcessCommandRange_Singleton::ProcessCommandRange( uint64_t shaderStart, uint64_t shaderEnd )
 {
-	if ( m_MT.pWorkerObj )
+	if ( m_nThreads > 1 )
 	{
-		MT::WorkerClass_t* pWorkerObj = m_MT.pWorkerObj;
-
-		pWorkerObj->RangeBegin( shaderStart, shaderEnd );
-		pWorkerObj->Run( m_nThreads );
-		pWorkerObj->RangeFinished();
+		m_MT->RangeBegin( shaderStart, shaderEnd );
+		m_MT->Run( m_nThreads );
+		m_MT->RangeFinished();
 	}
 	else
 	{
-		ST::WorkerClass_t* pWorkerObj = m_ST.pWorkerObj;
-
-		pWorkerObj->RangeBegin( shaderStart, shaderEnd );
-		pWorkerObj->OnProcessST();
-		pWorkerObj->RangeFinished();
+		m_ST->RangeBegin( shaderStart, shaderEnd );
+		m_ST->OnProcessST();
+		m_ST->RangeFinished();
 	}
 }
 
@@ -1206,7 +1172,7 @@ static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> Shared_ParseListOfCompileCo
 		CfgProcessor::ShaderConfig conf;
 		if ( !Parser::ParseFile( g_pShaderPath / file, root, g_pShaderVersion, conf.static_c, conf.dynamic_c, conf.skip, conf.centroid_mask, conf.includes ) )
 		{
-			std::cout << clr::red << "Failed to parse " << file << clr::reset << std::endl;
+			std::cout << clr::red << "Failed to parse "sv << file << clr::reset << std::endl;
 			failed = true;
 			continue;
 		}
@@ -1235,7 +1201,7 @@ static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> Shared_ParseListOfCompileCo
 
 	const Clock::time_point tt_end = Clock::now();
 
-	std::cout << "\r\033[2KCompiling " << clr::green << PrettyPrint( numCompileCommands ) << clr::reset << " commands  in " << clr::green << PrettyPrint( numStaticCombos ) << clr::reset << " static combos, setup took " << clr::green << duration_cast<chrono::seconds>( tt_end - tt_start ).count() << clr::reset << " seconds.\r";
+	std::cout << "\rCompiling "sv << clr::green << PrettyPrint( numCompileCommands ) << clr::reset << " commands  in "sv << clr::green << PrettyPrint( numStaticCombos ) << clr::reset << " static combos, setup took "sv << clr::green << duration_cast<chrono::seconds>( tt_end - tt_start ).count() << clr::reset << " seconds."sv << endLine;
 
 	return arrEntries;
 }
@@ -1273,7 +1239,7 @@ static void CompileShaders( std::unique_ptr<CfgProcessor::CfgEntryInfo[]> arrEnt
 		WriteShaderFiles( pEntry->m_szName );
 	}
 
-	std::cout << "\r\033[2K\r";
+	std::cout << lineRewind << endLine;
 }
 
 static LONG WINAPI ExceptionFilter( _EXCEPTION_POINTERS* pExceptionInfo )
@@ -1355,7 +1321,7 @@ static void PrintCompileErrors()
 			totalWarnings += msg.second.warning.size();
 			totalErrors += msg.second.error.size();
 		}
-		std::cout << "\033[2K" << clr::yellow << "WARNINGS" << clr::reset << "/" << clr::red << "ERRORS " << clr::reset << totalWarnings << "/" << totalErrors << std::endl;
+		std::cout << "\033[2K"sv << clr::yellow << "WARNINGS"sv << clr::reset << "/"sv << clr::red << "ERRORS "sv << clr::reset << totalWarnings << "/"sv << totalErrors << std::endl;
 
 		const auto& trim = []( std::string s ) -> std::string
 		{
@@ -1372,7 +1338,7 @@ static void PrintCompileErrors()
 			const std::string searchPat = std::string( g_ShaderToShaderInfo[shaderName].m_pShaderSrc ) + "(";
 
 			if ( const size_t warnings = msg.warning.size() )
-				std::cout << "\033[2K" << shaderName << " " << clr::yellow << warnings << " WARNING(S):" << clr::reset << std::endl;
+				std::cout << "\033[2K"sv << shaderName << " "sv << clr::yellow << warnings << " WARNING(S):"sv << clr::reset << std::endl;
 
 			for ( const auto& warn : msg.warning )
 			{
@@ -1383,11 +1349,11 @@ static void PrintCompileErrors()
 				std::string m = trim( szMsg );
 				if ( size_t find = m.find( searchPat ); find != std::string::npos && find >= cwdLen )
 					m = m.replace( find - cwdLen, cwdLen, "" );
-				std::cout << "\033[2K" << m << "\nReported " << clr::green << numReported << clr::reset << " time(s)" << std::endl;
+				std::cout << "\033[2K"sv << m << "\nReported "sv << clr::green << numReported << clr::reset << " time(s)"sv << std::endl;
 			}
 
 			if ( const size_t errors = msg.error.size() )
-				std::cout << "\033[2K" << shaderName << " " << clr::red << errors << " ERROR(S):" << clr::reset << std::endl;
+				std::cout << "\033[2K"sv << shaderName << " "sv << clr::red << errors << " ERROR(S):"sv << clr::reset << std::endl;
 
 			// Compiler spew
 			for ( const auto& err : msg.error )
@@ -1400,16 +1366,16 @@ static void PrintCompileErrors()
 				std::string m = trim( szMsg );
 				if ( size_t find = m.find( searchPat ); find != std::string::npos && find >= cwdLen )
 					m = m.replace( find - cwdLen, cwdLen, "" );
-				std::cout << "\033[2K" << m << "\nReported " << clr::green << numReported << clr::reset << " time(s), example command: " << std::endl;
+				std::cout << "\033[2K"sv << m << "\nReported "sv << clr::green << numReported << clr::reset << " time(s), example command: "sv << std::endl;
 
-				std::cout << "\033[2K" << "    " << clr::green << cmd << clr::reset << std::endl;
+				std::cout << "\033[2K    "sv << clr::green << cmd << clr::reset << std::endl;
 			}
 		}
 	}
 
 	// Failed shaders summary
 	for ( const auto& failed : g_ShaderHadError )
-		std::cout << "\033[2K" << clr::pinkish << "FAILED: " << clr::red << failed << clr::reset << std::endl;
+		std::cout << "\033[2K"sv << clr::pinkish << "FAILED: "sv << clr::red << failed << clr::reset << std::endl;
 }
 
 static bool s_write = true;
@@ -1437,7 +1403,7 @@ static void WriteStats()
 	//
 	const Clock::time_point end = Clock::now();
 
-	std::cout << "\033[2K" << clr::green << FormatTime( duration_cast<chrono::seconds>( end - g_flStartTime ).count() ) << clr::reset << " elapsed" << std::endl;
+	std::cout << "\r"sv << clr::green << FormatTime( duration_cast<chrono::seconds>( end - g_flStartTime ).count() ) << clr::reset << " elapsed"sv << std::endl;
 }
 
 int main( int argc, const char* argv[] )
@@ -1482,8 +1448,8 @@ int main( int argc, const char* argv[] )
 		std::string usage;
 		cmdLine.getUsageDescriptions( usage, csbi.srWindow.Right - csbi.srWindow.Left + 1, ez::ezOptionParser::ALIGN );
 		std::cout << cmdLine.overview << "\n\n"
-				  << "Usage: " << cmdLine.syntax << "\n\n"
-				  << clr::green << clr::bold << "OPTIONS:\n"
+				  << "Usage: "sv << cmdLine.syntax << "\n\n"sv
+				  << clr::green << clr::bold << "OPTIONS:\n"sv
 				  << clr::reset << usage << std::endl;
 		return 0;
 	}
@@ -1511,7 +1477,7 @@ int main( int argc, const char* argv[] )
 		flags |= D3DCOMPILE_OPTIMIZATION_LEVEL0;
 		break;
 	default:
-		std::cout << "Unknown optimization level " << optLevel << ", using default!" << std::endl;
+		std::cout << "Unknown optimization level "sv << optLevel << ", using default!"sv << std::endl;
 		break;
 	case 1:
 		flags |= D3DCOMPILE_OPTIMIZATION_LEVEL1;
@@ -1527,18 +1493,18 @@ int main( int argc, const char* argv[] )
 	std::vector<std::string> badOptions;
 	if ( !cmdLine.gotRequired( badOptions ) || cmdLine.lastArgs.size() < 1 )
 	{
-		std::cout << clr::red << clr::bold << "ERROR: Missing argument" << ( badOptions.size() == 1 ? ": " : "s:\n" ) << clr::reset;
+		std::cout << clr::red << clr::bold << "ERROR: Missing argument"sv << ( badOptions.size() == 1 ? ": "sv : "s:\n"sv ) << clr::reset;
 		for ( const auto& option : badOptions )
-			std::cout << option << "\n";
+			std::cout << option << std::endl;
 		std::cout << clr::reset << std::endl;
 		return -1;
 	}
 
 	if ( !cmdLine.gotExpected( badOptions ) )
 	{
-		std::cout << clr::red << clr::bold << "ERROR: Got unexpected number of arguments for option" << ( badOptions.size() == 1 ? ": " : "s:\n" ) << clr::reset;
+		std::cout << clr::red << clr::bold << "ERROR: Got unexpected number of arguments for option"sv << ( badOptions.size() == 1 ? ": "sv : "s:\n"sv ) << clr::reset;
 		for ( const auto& option : badOptions )
-			std::cout << option << "\n";
+			std::cout << option << std::endl;
 		std::cout << clr::reset << std::endl;
 		return -1;
 	}
@@ -1546,7 +1512,7 @@ int main( int argc, const char* argv[] )
 	cmdLine.get( "-ver" )->getString( g_pShaderVersion );
 	if ( !Parser::ValidateVersion( g_pShaderVersion ) )
 	{
-		std::cout << clr::red << "Shader uses unknown shader version: " << clr::pinkish << g_pShaderVersion << clr::reset << std::endl;
+		std::cout << clr::red << "Shader uses unknown shader version: "sv << clr::pinkish << g_pShaderVersion << clr::reset << std::endl;
 		return -1;
 	}
 
@@ -1573,7 +1539,6 @@ int main( int argc, const char* argv[] )
 
 	if ( cmdLine.isSet( "-dynamic" ) )
 	{
-		using namespace std::literals;
 		bool failed = false;
 		const auto root = g_pShaderPath.string();
 		for ( const auto& file : files )
@@ -1585,7 +1550,7 @@ int main( int argc, const char* argv[] )
 
 			if ( !Parser::ParseFile( g_pShaderPath / file, root, g_pShaderVersion, static_c, dynamic_c, skip, centroid_mask, includes ) )
 			{
-				std::cout << clr::red << "Failed to parse " << file << clr::reset << std::endl;
+				std::cout << clr::red << "Failed to parse "sv << file << clr::reset << std::endl;
 				failed = true;
 			}
 			const std::string name = Parser::ConstructName( file, g_pShaderVersion );

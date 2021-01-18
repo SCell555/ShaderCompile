@@ -2,7 +2,7 @@
 
 namespace LZMA
 {
-	static constexpr int LZMA_ID = 'AMZL';
+	static constexpr int LZMA_ID = ( 'A' << 24 ) + ( 'M' << 16 ) + ( 'Z' << 8 ) + 'L';
 #pragma pack( 1 )
 	struct lzma_header_t
 	{

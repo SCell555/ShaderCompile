@@ -24,13 +24,10 @@ set(SRC
     )
 
 add_executable(ShaderCompile ${SRC})
-target_link_libraries(ShaderCompile re2::re2 Microsoft.GSL::GSL)
+target_link_libraries(ShaderCompile PRIVATE re2::re2 Microsoft.GSL::GSL)
 include_directories(ShaderCompile/include shared/re2)
 
-if (WIN32)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus")
-endif()
-
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus")
 set_property(TARGET ShaderCompile PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set_property(TARGET re2 PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 target_compile_definitions(ShaderCompile PRIVATE _ITERATOR_DEBUG_LEVEL=0)

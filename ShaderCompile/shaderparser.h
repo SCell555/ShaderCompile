@@ -2,14 +2,7 @@
 
 #include <string>
 #include <vector>
-
-namespace std
-{
-	namespace filesystem
-	{
-		class path;
-	}
-}
+#include <filesystem>
 
 namespace Parser
 {

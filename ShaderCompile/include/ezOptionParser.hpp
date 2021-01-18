@@ -144,23 +144,6 @@ static void SplitDelim( const std::string& s, const char token, std::vector<std:
 	}
 }
 /* ################################################################### */
-// Variant that uses list instead of vector for efficient insertion, etc.
-static void SplitDelim( const std::string& s, const char token, std::list<std::string*>& result )
-{
-	std::string::const_iterator i = s.begin();
-	std::string::const_iterator j = s.begin();
-	const std::string::const_iterator e = s.end();
-
-	while ( i != e )
-	{
-		while ( i != e && *i++ != token ) continue;
-		std::string* newstr = new std::string( j, i );
-		if ( newstr->at( newstr->size() - 1 ) == token ) newstr->erase( newstr->size() - 1 );
-		result.emplace_back( newstr );
-		j = i;
-	}
-}
-/* ################################################################### */
 template <typename T>
 static void ToNumber( std::string** strings, T* out, size_t n )
 {
@@ -333,8 +316,6 @@ public:
 	inline ezOptionValidator( char _type, char _op, const unsigned int* list, int _size );
 	inline ezOptionValidator( char _type, char _op, const long long* list, int _size );
 	inline ezOptionValidator( char _type, char _op, const unsigned long long* list, int _size = 0 );
-	inline ezOptionValidator( char _type, char _op, const float* list, int _size );
-	inline ezOptionValidator( char _type, char _op, const double* list, int _size );
 	inline ezOptionValidator( char _type, char _op, const char** list, int _size, bool _insensitive );
 	inline ~ezOptionValidator();
 
@@ -368,8 +349,6 @@ public:
 		U4,
 		S8,
 		U8,
-		F,
-		D,
 		T
 	};
 	enum TYPE2
@@ -383,8 +362,6 @@ public:
 		UINT32,
 		INT64,
 		UINT64,
-		FLOAT,
-		DOUBLE,
 		TEXT
 	};
 
@@ -398,8 +375,6 @@ public:
 		int* s4;
 		unsigned long long* u8;
 		long long* s8;
-		float* f;
-		double* d;
 		std::string** t;
 	};
 
@@ -433,8 +408,6 @@ case TYPE:               \
 		CLEAR( U4, u4 );
 		CLEAR( S8, s8 );
 		CLEAR( U8, u8 );
-		CLEAR( F, f );
-		CLEAR( D, d );
 	case T:
 		for ( size_t i = 0; i < size; ++i )
 			delete t[i];
@@ -521,22 +494,6 @@ ezOptionValidator::ezOptionValidator( char _type, char _op, const unsigned long 
 	memcpy( u8, list, size * sizeof( unsigned long long ) );
 }
 /* ------------------------------------------------------------------- */
-ezOptionValidator::ezOptionValidator( char _type, char _op, const float* list, int _size )
-	: f( 0 ), op( _op ), quiet( 0 ), type( _type ), size( _size ), insensitive( 0 )
-{
-	id = ezOptionParserIDGenerator::instance().next();
-	f = new float[size];
-	memcpy( f, list, size * sizeof( float ) );
-}
-/* ------------------------------------------------------------------- */
-ezOptionValidator::ezOptionValidator( char _type, char _op, const double* list, int _size )
-	: d( 0 ), op( _op ), quiet( 0 ), type( _type ), size( _size ), insensitive( 0 )
-{
-	id = ezOptionParserIDGenerator::instance().next();
-	d = new double[size];
-	memcpy( d, list, size * sizeof( double ) );
-}
-/* ------------------------------------------------------------------- */
 ezOptionValidator::ezOptionValidator( char _type, char _op, const char** list, int _size, bool _insensitive )
 	: t( 0 ), op( _op ), quiet( 0 ), type( _type ), size( _size ), insensitive( _insensitive )
 {
@@ -599,12 +556,6 @@ ezOptionValidator::ezOptionValidator( const char* _type, const char* _op, const 
 		default:
 			break;
 		}
-		break;
-	case 'f':
-		type = F;
-		break;
-	case 'd':
-		type = D;
 		break;
 	case 't':
 		type = T;
@@ -690,15 +641,14 @@ ezOptionValidator::ezOptionValidator( const char* _type, const char* _op, const 
 	if ( _list == 0 ) return;
 	// Create list of strings and then cast to native datatypes.
 	std::string unsplit( _list );
-	std::list<std::string*> split;
-	std::list<std::string*>::iterator it;
-	SplitDelim( unsplit, ',', split );
+	std::vector<std::string*> split;
+	SplitDelim( unsplit, ',', &split );
 	size = split.size();
 	std::string** strings = new std::string*[size];
 
-	size_t i = 0;
-	for ( it = split.begin(); it != split.end(); ++it )
-		strings[i++] = *it;
+	size_t i;
+	for ( i = 0; i < size; ++i )
+		strings[i] = split[i];
 
 	if ( insensitive )
 		for ( i = 0; i < size; ++i )
@@ -727,8 +677,6 @@ case T:                           \
 		ToArray( U4, u4, unsigned int );
 		ToArray( S8, s8, long long );
 		ToArray( U8, u8, unsigned long long );
-		ToArray( F, f, float );
-		ToArray( D, d, double );
 	case T:
 		t = strings;
 		break; /* Don't erase strings array. */
@@ -826,51 +774,6 @@ bool ezOptionValidator::isValid( const std::string* valueAsString )
 				{
 					if ( !quiet )
 						std::cerr << "ERROR: Invalid value " << *valueAsString << " is greater than datatype max 18446744073709551615.\n";
-					return false;
-				}
-			}
-			break;
-		case F:
-			{
-				constexpr double dmax = static_cast<double>( std::numeric_limits<float>::max() );
-				double dvalue;
-				std::from_chars( valueAsString->c_str(), valueAsString->c_str() + valueAsString->size(), dvalue );
-				double dmin = -dmax;
-				if ( dvalue < dmin )
-				{
-					if ( !quiet )
-					{
-						fprintf( stderr, "ERROR: Invalid value %g is less than datatype min %g.\n", dvalue, dmin );
-					}
-					return false;
-				}
-
-				if ( dvalue > dmax )
-				{
-					if ( !quiet )
-						std::cerr << "ERROR: Invalid value " << dvalue << " is greater than datatype max " << dmax << ".\n";
-					return false;
-				}
-			}
-			break;
-		case D:
-			{
-				constexpr long double ldmax = static_cast<long double>( std::numeric_limits<double>::max() );
-				long double ldvalue;
-				std::from_chars( valueAsString->c_str(), valueAsString->c_str() + valueAsString->size(), ldvalue );
-				long double ldmin = -ldmax;
-
-				if ( ldvalue < ldmin )
-				{
-					if ( !quiet )
-						std::cerr << "ERROR: Invalid value " << ldvalue << " is less than datatype min " << ldmin << ".\n";
-					return false;
-				}
-
-				if ( ldvalue > ldmax )
-				{
-					if ( !quiet )
-						std::cerr << "ERROR: Invalid value " << ldvalue << " is greater than datatype max " << ldmax << ".\n";
 					return false;
 				}
 			}
@@ -1057,12 +960,6 @@ bool ezOptionValidator::isValid( const std::string* valueAsString )
 	case S8:
 		VALIDATE( long long, long long, s8 );
 		break;
-	case F:
-		VALIDATE( float, float, f );
-		break;
-	case D:
-		VALIDATE( double, double, d );
-		break;
 	default:
 		break;
 	}
@@ -1089,20 +986,14 @@ public:
 	inline void getLongLong( long long& );
 	inline void getULong( unsigned long& );
 	inline void getULongLong( unsigned long long& );
-	inline void getFloat( float& );
-	inline void getDouble( double& );
 	inline void getString( std::string& );
 	inline void getInts( std::vector<int>& );
 	inline void getLongs( std::vector<long>& );
 	inline void getULongs( std::vector<unsigned long>& );
-	inline void getFloats( std::vector<float>& );
-	inline void getDoubles( std::vector<double>& );
 	inline void getStrings( std::vector<std::string>& );
 	inline void getMultiInts( std::vector<std::vector<int>>& );
 	inline void getMultiLongs( std::vector<std::vector<long>>& );
 	inline void getMultiULongs( std::vector<std::vector<unsigned long>>& );
-	inline void getMultiFloats( std::vector<std::vector<float>>& );
-	inline void getMultiDoubles( std::vector<std::vector<double>>& );
 	inline void getMultiStrings( std::vector<std::vector<std::string>>& );
 
 	// defaults value regardless of being set by user.
@@ -1244,46 +1135,6 @@ void OptionGroup::getULongLong( unsigned long long& out )
 	}
 }
 /* ################################################################### */
-void OptionGroup::getFloat( float& out )
-{
-	if ( !isSet )
-	{
-		if ( defaults.empty() )
-			out = 0.0;
-		else
-			std::from_chars( defaults.c_str(), defaults.c_str() + defaults.size(), out );
-	}
-	else
-	{
-		if ( args.empty() || args[0]->empty() )
-			out = 0.0;
-		else
-		{
-			std::from_chars( args[0]->at( 0 )->c_str(), args[0]->at( 0 )->c_str() + args[0]->at( 0 )->size(), out );
-		}
-	}
-}
-/* ################################################################### */
-void OptionGroup::getDouble( double& out )
-{
-	if ( !isSet )
-	{
-		if ( defaults.empty() )
-			out = 0.0;
-		else
-			std::from_chars( defaults.c_str(), defaults.c_str() + defaults.size(), out );
-	}
-	else
-	{
-		if ( args.empty() || args[0]->empty() )
-			out = 0.0;
-		else
-		{
-			std::from_chars( args[0]->at( 0 )->c_str(), args[0]->at( 0 )->c_str() + args[0]->at( 0 )->size(), out );
-		}
-	}
-}
-/* ################################################################### */
 void OptionGroup::getString( std::string& out )
 {
 	if ( !isSet )
@@ -1338,42 +1189,6 @@ void OptionGroup::getLongs( std::vector<long>& out )
 }
 /* ################################################################### */
 void OptionGroup::getULongs( std::vector<unsigned long>& out )
-{
-	if ( !isSet )
-	{
-		if ( !defaults.empty() )
-		{
-			std::vector<std::string> strings;
-			SplitDelim( defaults, delim, strings );
-			StringsToNumbers( strings, out );
-		}
-	}
-	else
-	{
-		if ( !( args.empty() || args[0]->empty() ) )
-			StringsToNumbers( args[0], &out );
-	}
-}
-/* ################################################################### */
-void OptionGroup::getFloats( std::vector<float>& out )
-{
-	if ( !isSet )
-	{
-		if ( !defaults.empty() )
-		{
-			std::vector<std::string> strings;
-			SplitDelim( defaults, delim, strings );
-			StringsToNumbers( strings, out );
-		}
-	}
-	else
-	{
-		if ( !( args.empty() || args[0]->empty() ) )
-			StringsToNumbers( args[0], &out );
-	}
-}
-/* ################################################################### */
-void OptionGroup::getDoubles( std::vector<double>& out )
 {
 	if ( !isSet )
 	{
@@ -1485,58 +1300,6 @@ void OptionGroup::getMultiULongs( std::vector<std::vector<unsigned long>>& out )
 	}
 }
 /* ################################################################### */
-void OptionGroup::getMultiFloats( std::vector<std::vector<float>>& out )
-{
-	if ( !isSet )
-	{
-		if ( !defaults.empty() )
-		{
-			std::vector<std::string> strings;
-			SplitDelim( defaults, delim, strings );
-			if ( out.size() < 1 ) out.resize( 1 );
-			StringsToNumbers( strings, out[0] );
-		}
-	}
-	else
-	{
-		if ( !args.empty() )
-		{
-			size_t n = args.size();
-			if ( out.size() < n ) out.resize( n );
-			for ( size_t i = 0; i < n; ++i )
-			{
-				StringsToNumbers( args[i], &out[i] );
-			}
-		}
-	}
-}
-/* ################################################################### */
-void OptionGroup::getMultiDoubles( std::vector<std::vector<double>>& out )
-{
-	if ( !isSet )
-	{
-		if ( !defaults.empty() )
-		{
-			std::vector<std::string> strings;
-			SplitDelim( defaults, delim, strings );
-			if ( out.size() < 1 ) out.resize( 1 );
-			StringsToNumbers( strings, out[0] );
-		}
-	}
-	else
-	{
-		if ( !args.empty() )
-		{
-			size_t n = args.size();
-			if ( out.size() < n ) out.resize( n );
-			for ( size_t i = 0; i < n; ++i )
-			{
-				StringsToNumbers( args[i], &out[i] );
-			}
-		}
-	}
-}
-/* ################################################################### */
 void OptionGroup::getMultiStrings( std::vector<std::vector<std::string>>& out )
 {
 	if ( !isSet )
@@ -1584,14 +1347,14 @@ public:
 	inline void add( std::string_view defaults, bool required, int expectArgs, char delim, std::string_view help, std::string_view flag1, std::string_view flag2, ezOptionValidator* validator = 0 );
 	inline void add( std::string_view defaults, bool required, int expectArgs, char delim, std::string_view help, std::string_view flag1, std::string_view flag2, std::string_view flag3, ezOptionValidator* validator = 0 );
 	inline void add( std::string_view defaults, bool required, int expectArgs, char delim, std::string_view help, std::string_view flag1, std::string_view flag2, std::string_view flag3, std::string_view flag4, ezOptionValidator* validator = 0 );
-	inline bool exportFile( std::string_view filename, bool all = false );
+	inline bool exportFile( const std::string& filename, bool all = false );
 	inline OptionGroup* get( std::string_view name );
 	inline void getUsage( std::string& usage, int width = 80, Layout layout = ALIGN );
 	inline void getUsageDescriptions( std::string& usage, int width = 80, Layout layout = STAGGER );
 	inline bool gotExpected( std::vector<std::string>& badOptions );
 	inline bool gotRequired( std::vector<std::string>& badOptions );
 	inline bool gotValid( std::vector<std::string>& badOptions, std::vector<std::string>& badArgs );
-	inline bool importFile( std::string_view filename, char comment = '#' );
+	inline bool importFile( const std::string& filename, char comment = '#' );
 	inline int isSet( std::string_view name );
 	inline void parse( int argc, const char* argv[] );
 	inline void prettyPrint( std::string& out );
@@ -1799,7 +1562,7 @@ void ezOptionParser::add( std::string_view defaults, bool required, int expectAr
 	}
 }
 /* ################################################################### */
-bool ezOptionParser::exportFile( std::string_view filename, bool all )
+bool ezOptionParser::exportFile( const std::string& filename, bool all )
 {
 	size_t i;
 	std::string out;
@@ -1916,7 +1679,7 @@ bool ezOptionParser::exportFile( std::string_view filename, bool all )
 //
 // Comment lines are allowed if prefixed with #.
 // Strings should be quoted as usual.
-bool ezOptionParser::importFile( std::string_view filename, char comment )
+bool ezOptionParser::importFile( const std::string& filename, char comment )
 {
 	std::ifstream file( filename, std::ios::in | std::ios::ate );
 	if ( !file.is_open() )
@@ -1931,21 +1694,20 @@ bool ezOptionParser::importFile( std::string_view filename, char comment )
 	file.close();
 
 	// Find comment lines.
-	std::list<std::string*> lines;
+	std::vector<std::string*> lines;
 	std::string memblockstring( memblock );
 	delete[] memblock;
-	SplitDelim( memblockstring, '\n', lines );
+	SplitDelim( memblockstring, '\n', &lines );
 	size_t i, j, n;
-	std::list<std::string*>::iterator iter;
 	std::vector<size_t> sq, dq;       // Single and double quote indices.
 	std::vector<size_t>::iterator lo; // For searching quote indices.
 	size_t pos;
 	const char* str;
 	std::string* line;
 	// Find all single and double quotes to correctly handle comment tokens.
-	for ( iter = lines.begin(); iter != lines.end(); ++iter )
+	for ( size_t k = 0; k < lines.size(); ++k )
 	{
-		line = *iter;
+		line = lines[k];
 		str = line->c_str();
 		n = line->size();
 		sq.clear();
@@ -2026,11 +1788,11 @@ bool ezOptionParser::importFile( std::string_view filename, char comment )
 
 	std::string cmd;
 	// Convert list to string without newlines to simulate commandline.
-	for ( iter = lines.begin(); iter != lines.end(); ++iter )
+	for ( size_t k = 0; k < lines.size(); ++k )
 	{
-		if ( !( *iter )->empty() )
+		if ( !lines[k]->empty() )
 		{
-			cmd.append( **iter );
+			cmd.append( *lines[k] );
 			cmd.append( " " );
 		}
 	}
@@ -2042,8 +1804,8 @@ bool ezOptionParser::importFile( std::string_view filename, char comment )
 	// Parse.
 	parse( argc, (const char**)argv );
 	if ( argv ) free( argv );
-	for ( iter = lines.begin(); iter != lines.end(); ++iter )
-		delete *iter;
+	for ( size_t k = 0; k < lines.size(); ++k )
+		delete lines[k];
 
 	return true;
 }
@@ -2144,7 +1906,7 @@ void ezOptionParser::getUsageDescriptions( std::string& usage, int width, Layout
 	}
 
 	// Each option group will use this to build multiline help description.
-	std::list<std::string*> desc;
+	std::vector<std::string*> desc;
 	// Number of whitespaces from start of line to description (interleave layout) or
 	// gap between flag names and description (align, stagger layouts).
 	int gutter = 3;
@@ -2162,7 +1924,7 @@ void ezOptionParser::getUsageDescriptions( std::string& usage, int width, Layout
 
 	// The amount of space remaining on a line for help text after flags.
 	int helpwidth;
-	std::list<std::string*>::iterator cIter, insertionIter;
+	std::vector<std::string*>::iterator cIter, insertionIter;
 	size_t pos;
 	for ( i = 0; i < groups.size(); ++i )
 	{
@@ -2175,7 +1937,7 @@ void ezOptionParser::getUsageDescriptions( std::string& usage, int width, Layout
 		helpwidth = width - pad;
 
 		// All the following split-fu could be optimized by just using substring (offset, length) tuples, but just to get it done, we'll do some not-too expensive string copying.
-		SplitDelim( groups[k]->help, '\n', desc );
+		SplitDelim( groups[k]->help, '\n', &desc );
 		// Split lines longer than allowable help width.
 		if ( desc.size() > 1 )
 		{
@@ -2435,7 +2197,7 @@ void ezOptionParser::prettyPrint( std::string& out )
 	out += "First Args:\n";
 	for ( i = 0; i < firstArgs.size(); ++i )
 	{
-		sprintf_s( tmp, "%zd: %s\n", i + 1, firstArgs[i]->c_str() );
+		sprintf_s( tmp, sizeof( tmp ), "%zd: %s\n", i + 1, firstArgs[i]->c_str() );
 		out += tmp;
 	}
 
@@ -2459,10 +2221,10 @@ void ezOptionParser::prettyPrint( std::string& out )
 		// The flag names:
 		for ( j = 0; j < g->flags.size() - 1; ++j )
 		{
-			sprintf_s( tmp, "%s, ", g->flags[j].c_str() );
+			sprintf_s( tmp, sizeof( tmp ), "%s, ", g->flags[j].c_str() );
 			out += tmp;
 		}
-		sprintf_s( tmp, "%s:\n", g->flags.back().c_str() );
+		sprintf_s( tmp, sizeof( tmp ), "%s:\n", g->flags.back().c_str() );
 		out += tmp;
 
 		if ( g->isSet )
@@ -2471,7 +2233,7 @@ void ezOptionParser::prettyPrint( std::string& out )
 			{
 				if ( g->args.empty() )
 				{
-					sprintf_s( tmp, "%s (default)\n", g->defaults.c_str() );
+					sprintf_s( tmp, sizeof( tmp ), "%s (default)\n", g->defaults.c_str() );
 					out += tmp;
 				}
 				else
@@ -2480,23 +2242,23 @@ void ezOptionParser::prettyPrint( std::string& out )
 					{
 						for ( j = 0; j < g->args[k]->size() - 1; ++j )
 						{
-							sprintf_s( tmp, "%s%c", g->args[k]->at( j )->c_str(), g->delim );
+							sprintf_s( tmp, sizeof( tmp ), "%s%c", g->args[k]->at( j )->c_str(), g->delim );
 							out += tmp;
 						}
-						sprintf_s( tmp, "%s\n", g->args[k]->back()->c_str() );
+						sprintf_s( tmp, sizeof( tmp ), "%s\n", g->args[k]->back()->c_str() );
 						out += tmp;
 					}
 				}
 			}
 			else
 			{ // Set but no args expected.
-				sprintf_s( tmp, "Set\n" );
+				sprintf_s( tmp, sizeof( tmp ), "Set\n" );
 				out += tmp;
 			}
 		}
 		else
 		{
-			sprintf_s( tmp, "Not set\n" );
+			sprintf_s( tmp, sizeof( tmp ), "Not set\n" );
 			out += tmp;
 		}
 	}
@@ -2504,14 +2266,14 @@ void ezOptionParser::prettyPrint( std::string& out )
 	out += "\nLast Args:\n";
 	for ( i = 0; i < lastArgs.size(); ++i )
 	{
-		sprintf_s( tmp, "%zd: %s\n", i + 1, lastArgs[i]->c_str() );
+		sprintf_s( tmp, sizeof( tmp ), "%zd: %s\n", i + 1, lastArgs[i]->c_str() );
 		out += tmp;
 	}
 
 	out += "\nUnknown Args:\n";
 	for ( i = 0; i < unknownArgs.size(); ++i )
 	{
-		sprintf_s( tmp, "%zd: %s\n", i + 1, unknownArgs[i]->c_str() );
+		sprintf_s( tmp, sizeof( tmp ), "%zd: %s\n", i + 1, unknownArgs[i]->c_str() );
 		out += tmp;
 	}
 }

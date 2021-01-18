@@ -608,28 +608,28 @@ class CUtlIntrusiveList
 public:
 	T* m_pHead;
 
-	[[nodiscard]] __forceinline T* Head() const
+	[[nodiscard]] T* Head() const
 	{
 		return m_pHead;
 	}
 
-	__forceinline CUtlIntrusiveList()
+	CUtlIntrusiveList()
 	{
 		m_pHead = nullptr;
 	}
 
-	__forceinline void RemoveAll()
+	void RemoveAll()
 	{
 		// empty list. doesn't touch nodes at all
 		m_pHead = nullptr;
 	}
 
-	__forceinline void AddToHead( T* node )
+	void AddToHead( T* node )
 	{
 		IntrusiveList::AddToHead( m_pHead, node );
 	}
 
-	__forceinline void AddToTail( T* node )
+	void AddToTail( T* node )
 	{
 		IntrusiveList::AddToTail( m_pHead, node );
 	}
@@ -669,7 +669,7 @@ public:
 		return IntrusiveList::ListLength( m_pHead );
 	}
 
-	[[nodiscard]] __forceinline T* FindNamedNodeCaseSensitive( char const* pName ) const
+	[[nodiscard]] T* FindNamedNodeCaseSensitive( char const* pName ) const
 	{
 		return IntrusiveList::FindNamedNodeCaseSensitive( m_pHead, pName );
 	}
@@ -692,12 +692,12 @@ template <class T>
 class CUtlIntrusiveDList : public CUtlIntrusiveList<T>
 {
 public:
-	__forceinline void AddToHead( T* node )
+	void AddToHead( T* node )
 	{
 		IntrusiveList::AddToDHead( this->m_pHead, node );
 	}
 
-	__forceinline void AddToTail( T* node )
+	void AddToTail( T* node )
 	{
 		IntrusiveList::AddToDTail( this->m_pHead, node );
 	}
@@ -733,18 +733,18 @@ class CUtlIntrusiveDListWithTailPtr : public CUtlIntrusiveDList<T>
 public:
 	T* m_pTailPtr;
 
-	__forceinline CUtlIntrusiveDListWithTailPtr()
+	CUtlIntrusiveDListWithTailPtr()
 		: CUtlIntrusiveDList<T>()
 	{
 		m_pTailPtr = nullptr;
 	}
 
-	__forceinline void AddToHead( T* node )
+	void AddToHead( T* node )
 	{
 		IntrusiveList::AddToDHeadWithTailPtr( this->m_pHead, node, m_pTailPtr );
 	}
 
-	__forceinline void AddToTail( T* node )
+	void AddToTail( T* node )
 	{
 		IntrusiveList::AddToDTailWithTailPtr( this->m_pHead, node, m_pTailPtr );
 	}

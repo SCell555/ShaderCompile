@@ -9,19 +9,12 @@
 #pragma once
 
 #include "basetypes.h"
-#include <span>
+#include "gsl/span"
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
-
-namespace std
-{
-	namespace filesystem
-	{
-		class path;
-	}
-}
 
 namespace Parser
 {
@@ -86,7 +79,7 @@ using ComboHandle = __ComboHandle*;
 
 ComboHandle Combo_GetCombo( uint64_t iCommandNumber );
 void Combo_GetNext( uint64_t& riCommandNumber, ComboHandle& rhCombo, uint64_t iCommandEnd );
-void Combo_FormatCommandHumanReadable( ComboHandle hCombo, std::span<char> pchBuffer );
+void Combo_FormatCommandHumanReadable( ComboHandle hCombo, gsl::span<char> pchBuffer );
 uint64_t Combo_GetCommandNum( ComboHandle hCombo ) noexcept;
 uint64_t Combo_GetComboNum( ComboHandle hCombo ) noexcept;
 const CfgEntryInfo* Combo_GetEntryInfo( ComboHandle hCombo ) noexcept;

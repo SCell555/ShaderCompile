@@ -24,7 +24,12 @@
 #include <termcolor/termcolor.hpp>
 
 #pragma push_macro("__reserved")
+#pragma push_macro("__cdecl")
 #undef __reserved
+#ifndef WIN32
+#undef __cdecl
+#define __cdecl
+#endif
 
 namespace termcolor
 {
@@ -325,6 +330,7 @@ namespace termcolor
 
 } // namespace termcolor
 
+#pragma pop_macro("__cdecl")
 #pragma pop_macro("__reserved")
 
 #endif // STYLE_HPP

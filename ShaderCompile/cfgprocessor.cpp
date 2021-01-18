@@ -19,7 +19,6 @@
 #include "utlbuffer.h"
 #include <algorithm>
 #include <charconv>
-#include <concepts>
 #include <cstdarg>
 #include <ctime>
 #include <filesystem>
@@ -30,8 +29,9 @@
 #include <unordered_map>
 #include <vector>
 #include <fstream>
+#include <inttypes.h>
 
-#include "gsl/gsl_narrow"
+#include "gsl/narrow"
 #include "termcolor/style.hpp"
 #include "termcolors.hpp"
 #include "strmanip.hpp"
@@ -414,8 +414,7 @@ protected:
 	IExpression* ParseTopLevel( char*& szExpression );
 	IExpression* ParseInternal( char*& szExpression );
 	template <typename T, typename... Args>
-		requires std::derived_from<T, IExpression> && std::constructible_from<T, Args...>
-	T* Expression( Args&&... args );
+	auto Expression( Args&&... args ) -> std::enable_if_t<std::conjunction_v<std::is_base_of<IExpression, T>, std::is_constructible<T, Args...>>, T*>;
 	IExpression* AbortedParse( char* &szExpression ) const noexcept
 	{
 		*szExpression = 0;
@@ -626,8 +625,7 @@ IExpression* CComplexExpression::ParseInternal( char* &szExpression )
 }
 
 template <typename T, typename... Args>
-	requires std::derived_from<T, IExpression> && std::constructible_from<T, Args...>
-T* CComplexExpression::Expression( Args&&... args )
+auto CComplexExpression::Expression( Args&&... args ) -> std::enable_if_t<std::conjunction_v<std::is_base_of<IExpression, T>, std::is_constructible<T, Args...>>, T*>
 {
 	return static_cast<T*>( m_arrAllExpressions.emplace_back( std::make_unique<T>( std::forward<Args>( args )... ) ).get() );
 }
@@ -749,7 +747,7 @@ public:
 	bool NextNotSkipped( uint64_t iTotalCommand ) noexcept;
 	bool IsSkipped() const noexcept { return m_pEntry->m_pExpr->Evaluate( this ) != 0; }
 	CfgProcessor::ComboBuildCommand BuildCommand() const;
-	void FormatCommandHumanReadable( std::span<char> pchBuffer ) const;
+	void FormatCommandHumanReadable( gsl::span<char> pchBuffer ) const;
 };
 
 static std::map<uint64_t, ComboHandleImpl> s_mapComboCommands;
@@ -873,9 +871,9 @@ CfgProcessor::ComboBuildCommand ComboHandleImpl::BuildCommand() const
 	command.defines.emplace_back( "SHADERCOMBO", String( tmpBuf ) );
 
 	char version[16];
-	strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion.data() );
+	strcpy_s( version, sizeof( version ), m_pEntry->m_eiInfo.m_szShaderVersion.data() );
 	_strupr_s( version );
-	sprintf_s( tmpBuf, "SHADER_MODEL_%s", version );
+	sprintf_s( tmpBuf, sizeof( tmpBuf ), "SHADER_MODEL_%6.6s", version );
 
 	command.defines.emplace_back( String( tmpBuf ), "1" );
 
@@ -888,7 +886,7 @@ CfgProcessor::ComboBuildCommand ComboHandleImpl::BuildCommand() const
 	return command;
 }
 
-void ComboHandleImpl::FormatCommandHumanReadable( std::span<char> pchBuffer ) const
+void ComboHandleImpl::FormatCommandHumanReadable( gsl::span<char> pchBuffer ) const
 {
 	// Get the pointers
 	const int* const pnValues    = m_arrVarSlots.data();
@@ -902,7 +900,7 @@ void ComboHandleImpl::FormatCommandHumanReadable( std::span<char> pchBuffer ) co
 
 	// ------- OnCombo( nCurrentCombo ); ----------
 	char version[20];
-	strcpy_s( version, m_pEntry->m_eiInfo.m_szShaderVersion.data() );
+	strcpy_s( version, sizeof( version ), m_pEntry->m_eiInfo.m_szShaderVersion.data() );
 	_strupr_s( version );
 	int o = sprintf_s( pchBuffer.data(), pchBuffer.size(),
 		"fxc /DCENTROIDMASK=%d /DSHADERCOMBO=%llx /DSHADER_MODEL_%s=1 /T%s /Emain",
@@ -1207,7 +1205,7 @@ ComboBuildCommand Combo_BuildCommand( ComboHandle hCombo )
 	return pImpl->BuildCommand();
 }
 
-void Combo_FormatCommandHumanReadable( ComboHandle hCombo, std::span<char> pchBuffer )
+void Combo_FormatCommandHumanReadable( ComboHandle hCombo, gsl::span<char> pchBuffer )
 {
 	const auto pImpl = FromHandle( hCombo );
 	pImpl->FormatCommandHumanReadable( pchBuffer );
