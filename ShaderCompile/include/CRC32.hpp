@@ -90,12 +90,15 @@ namespace CRC32
 		{
 		case 7:
 			ulCrc = pulCRCTable[*pb++ ^ static_cast<uint8_t>( ulCrc )] ^ ( ulCrc >> 8 );
+			[[fallthrough]];
 
 		case 6:
 			ulCrc = pulCRCTable[*pb++ ^ static_cast<uint8_t>( ulCrc )] ^ ( ulCrc >> 8 );
+			[[fallthrough]];
 
 		case 5:
 			ulCrc = pulCRCTable[*pb++ ^ static_cast<uint8_t>( ulCrc )] ^ ( ulCrc >> 8 );
+			[[fallthrough]];
 
 		case 4:
 			ulCrc ^= *reinterpret_cast<const CRC32_t*>( pb );
@@ -108,12 +111,15 @@ namespace CRC32
 
 		case 3:
 			ulCrc = pulCRCTable[*pb++ ^ static_cast<uint8_t>( ulCrc )] ^ ( ulCrc >> 8 );
+			[[fallthrough]];
 
 		case 2:
 			ulCrc = pulCRCTable[*pb++ ^ static_cast<uint8_t>( ulCrc )] ^ ( ulCrc >> 8 );
+			[[fallthrough]];
 
 		case 1:
 			ulCrc = pulCRCTable[*pb++ ^ static_cast<uint8_t>( ulCrc )] ^ ( ulCrc >> 8 );
+			[[fallthrough]];
 
 		case 0:
 			pulCRC = ulCrc;
@@ -132,8 +138,10 @@ namespace CRC32
 		{
 		case 3:
 			ulCrc = pulCRCTable[*pb++ ^ static_cast<uint8_t>( ulCrc )] ^ ( ulCrc >> 8 );
+			[[fallthrough]];
 		case 2:
 			ulCrc = pulCRCTable[*pb++ ^ static_cast<uint8_t>( ulCrc )] ^ ( ulCrc >> 8 );
+			[[fallthrough]];
 		case 1:
 			ulCrc = pulCRCTable[*pb++ ^ static_cast<uint8_t>( ulCrc )] ^ ( ulCrc >> 8 );
 		}

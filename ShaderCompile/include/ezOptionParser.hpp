@@ -1681,7 +1681,7 @@ bool ezOptionParser::exportFile( const std::string& filename, bool all )
 // Strings should be quoted as usual.
 bool ezOptionParser::importFile( const std::string& filename, char comment )
 {
-	std::ifstream file( filename, std::ios::in | std::ios::ate );
+	std::ifstream file( filename, std::ios::binary | std::ios::ate );
 	if ( !file.is_open() )
 		return false;
 

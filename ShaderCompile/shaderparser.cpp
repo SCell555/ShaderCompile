@@ -224,7 +224,7 @@ void Parser::WriteInclude( const fs::path& fileName, const std::string& name, co
 
 	{
 		fs::create_directories( fileName.parent_path() );
-		std::ofstream file( fileName, std::ios::trunc );
+		std::ofstream file( fileName, std::ios::trunc | std::ios::binary );
 		const auto& writeVars = [&]( const std::string_view& suffix, const std::vector<Combo>& vars, const std::string_view& ctor, uint32_t scale, bool dynamic )
 		{
 			file << "class "sv << name << "_"sv << suffix << "_Index\n{\n";
@@ -339,7 +339,7 @@ void Parser::WriteInclude( const fs::path& fileName, const std::string& name, co
 
 		file << "\n};\n"sv;
 
-		file << "static const class ConstructMe_"sv << name << "\n{\n\tConstructMe_"sv << name << "()\n\t{\n\t\tGetShaderDLL()->AddShaderComboInformation( &"sv << name << "_combos );\n\t}\n} s_ConstuctMe_"sv << name << ";"sv;
+		file << "inline const class ConstructMe_"sv << name << "\n{\npublic:\n\tConstructMe_"sv << name << "()\n\t{\n\t\tGetShaderDLL()->AddShaderComboInformation( &"sv << name << "_combos );\n\t}\n} s_ConstuctMe_"sv << name << ";"sv;
 	}
 
 	fs::permissions( fileName, fs::perms::owner_read );
