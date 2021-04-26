@@ -43,7 +43,7 @@ namespace r
 	static const RE2 inc( R"reg(#\s*include\s*"(.*)")reg" );
 	static const RE2 xbox_reg( R"reg(\[XBOX\])reg" );
 	static const RE2 pc_reg( R"reg(\[PC\])reg" );
-	static const RE2 start( R"reg(^\s*//\s*(STATIC|DYNAMIC|SKIP|CENTROID)\s*:\s*(.*)$)reg" );
+	static const RE2 start( R"reg(^\s*//\s*(STATIC|DYNAMIC|SKIP|CENTROID|[VPGDH]S_MAIN)\s*:\s*(.*)$)reg" );
 	static const RE2 init( R"reg(\[\s*=\s*([^\]]+)\])reg" );
 	static const RE2 static_combo( R"reg(^\s*//\s*STATIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)".*)reg" );
 	static const RE2 dynamic_combo( R"reg(^\s*//\s*DYNAMIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)".*)reg" );
@@ -154,6 +154,7 @@ bool Parser::ParseFile( const fs::path& name, const std::string& root, const std
 	const auto f = nameS.find_last_of( '.' );
 	char regMatch[] = { R"reg(\[ s(\d+\w?)\])reg" };
 	char regNotMatch[] = { R"reg(\[[    ]s\d+\w?\])reg" };
+	std::string mainCat = " S_MAIN"s;
 
 	regMatch[2] = target[0];
 	for ( int i = 0, j = 0; i < 5; ++i )
@@ -162,6 +163,7 @@ bool Parser::ParseFile( const fs::path& name, const std::string& root, const std
 	mainCat[0] = toupper( target[0] );
 	const RE2 shouldMatch( regMatch );
 	const RE2 shouldNotMatch( regNotMatch );
+	conf.main = "main"s;
 
 	const auto& trim = []( std::string s ) -> std::string
 	{
@@ -214,11 +216,15 @@ bool Parser::ParseFile( const fs::path& name, const std::string& root, const std
 			RE2::FullMatch( trim( line ), r::centroid, &v );
 			conf.centroid_mask |= 1 << v;
 		}
-		else
+		else if ( name == "SKIP"sv )
 		{
 			RE2::GlobalReplace( &value, shouldMatch, {} );
 			RE2::Replace( &value, r::pc_reg, {} );
 			conf.skip.emplace_back( trim( std::move( value ) ) );
+		}
+		else if ( name == mainCat )
+		{
+			conf.main = value;
 		}
 	};
 

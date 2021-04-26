@@ -863,7 +863,7 @@ CfgProcessor::ComboBuildCommand ComboHandleImpl::BuildCommand() const
 	const Define* const pDefVarsEnd = m_pEntry->m_pCg->GetDefinesEnd();
 	const Define* pSetDef;
 
-	CfgProcessor::ComboBuildCommand command{ m_pEntry->m_szShaderSrc, m_pEntry->m_eiInfo.m_szShaderVersion };
+	CfgProcessor::ComboBuildCommand command{ m_pEntry->m_eiInfo.m_szEntryPoint, m_pEntry->m_szShaderSrc, m_pEntry->m_eiInfo.m_szShaderVersion };
 	command.defines.reserve( m_pEntry->m_pCg->DefineCount() + 2 );
 
 	char tmpBuf[24]{};
@@ -972,6 +972,7 @@ static void SetupConfiguration( const std::vector<CfgProcessor::ShaderConfig>& c
 		info.m_szName = cfg.m_szName;
 		info.m_szShaderFileName = cfg.m_szShaderSrc;
 		info.m_szShaderVersion = *s_strPool.emplace( baseTemplate ).first;
+		info.m_szEntryPoint = *s_strPool.emplace( conf.main ).first;
 		info.m_numCombos = cg.NumCombos();
 		info.m_numDynamicCombos = cg.NumCombos( false );
 		info.m_numStaticCombos = cg.NumCombos( true );
@@ -1029,7 +1030,7 @@ static void SetupConfiguration( const std::vector<CfgProcessor::ShaderConfig>& c
 		static CfgEntry s_term;
 		s_term.m_eiInfo.m_iCommandStart = s_term.m_eiInfo.m_iCommandEnd = nCurrentCommand;
 		s_term.m_eiInfo.m_numCombos = s_term.m_eiInfo.m_numStaticCombos = s_term.m_eiInfo.m_numDynamicCombos = 1;
-		s_term.m_eiInfo.m_szName = s_term.m_eiInfo.m_szShaderFileName = "";
+		s_term.m_eiInfo.m_szName = s_term.m_eiInfo.m_szShaderFileName = s_term.m_eiInfo.m_szEntryPoint = "";
 		ComboHandleImpl chi;
 		chi.m_iTotalCommand = nCurrentCommand;
 		chi.m_pEntry = &s_term;

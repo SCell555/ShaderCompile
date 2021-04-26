@@ -44,6 +44,7 @@ namespace CfgProcessor
 struct ShaderConfig
 {
 	std::string name;
+	std::string main;
 	std::string_view version;
 	std::string_view target;
 	uint32_t centroid_mask;
@@ -61,6 +62,7 @@ struct CfgEntryInfo
 	std::string_view	m_szName;				// Name of the shader, e.g. "shader_ps20b"
 	std::string_view	m_szShaderFileName;		// Name of the src file, e.g. "shader_psxx.fxc"
 	std::string_view	m_szShaderVersion;		// Version of shader
+	std::string_view	m_szEntryPoint;			// Name of main function
 	uint64_t			m_numCombos;			// Total possible num of combos, e.g. 1024
 	uint64_t			m_numDynamicCombos;		// Num of dynamic combos, e.g. 4
 	uint64_t			m_numStaticCombos;		// Num of static combos, e.g. 256
@@ -88,6 +90,7 @@ const CfgEntryInfo* Combo_GetEntryInfo( ComboHandle hCombo ) noexcept;
 
 struct ComboBuildCommand
 {
+	std::string_view entryPoint;
 	std::string_view fileName;
 	std::string_view shaderModel;
 	std::vector<std::pair<std::string_view, std::string_view>> defines;

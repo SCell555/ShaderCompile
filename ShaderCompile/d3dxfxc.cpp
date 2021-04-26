@@ -123,7 +123,7 @@ void Compiler::ExecuteCommand( const CfgProcessor::ComboBuildCommand& pCommand, 
 	HRESULT hr       = s_incDxImpl.Open( D3D_INCLUDE_LOCAL, pCommand.fileName.data(), nullptr, &lpcvData, &numBytes );
 	if ( !FAILED( hr ) )
 	{
-		hr = D3DCompile( lpcvData, numBytes, pCommand.fileName.data(), macros.data(), &s_incDxImpl, "main", pCommand.shaderModel.data(), flags, 0, &pShader, &pErrorMessages );
+		hr = D3DCompile( lpcvData, numBytes, pCommand.fileName.data(), macros.data(), &s_incDxImpl, pCommand.entryPoint.data(), pCommand.shaderModel.data(), flags, 0, &pShader, &pErrorMessages );
 
 		// Close the file
 		s_incDxImpl.Close( lpcvData );
