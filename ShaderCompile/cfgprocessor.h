@@ -44,6 +44,8 @@ namespace CfgProcessor
 struct ShaderConfig
 {
 	std::string name;
+	std::string_view version;
+	std::string_view target;
 	uint32_t centroid_mask;
 	uint32_t crc32;
 	std::vector<Parser::Combo> static_c;
@@ -52,7 +54,7 @@ struct ShaderConfig
 	std::vector<std::string> includes;
 };
 
-void SetupConfiguration( const std::vector<ShaderConfig>& configs, const std::string& version, const std::filesystem::path& root, bool bVerbose );
+void SetupConfiguration( const std::vector<ShaderConfig>& configs, const std::filesystem::path& root, bool bVerbose );
 
 struct CfgEntryInfo
 {

@@ -26,6 +26,7 @@
 #include <numeric>
 #include <set>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 #include <fstream>
@@ -915,16 +916,6 @@ void ComboHandleImpl::FormatCommandHumanReadable( gsl::span<char> pchBuffer ) co
 	pchBuffer[o] = '\0';
 }
 
-static const robin_hood::unordered_flat_map<std::string, std::array<std::string, 2>> shaderVersionMapping =
-{
-	{ "20b", { "ps_2_b", "vs_2_0" } },
-	{ "30", { "ps_3_0", "vs_3_0" } },
-	{ "40", { "ps_4_0", "vs_4_0" } },
-	{ "41", { "ps_4_1", "vs_4_1" } },
-	{ "50", { "ps_5_0", "vs_5_0" } },
-	{ "51", { "ps_5_1", "vs_5_1" } }
-};
-
 std::vector<std::pair<std::string, std::string>> GenerateSkipAsserts( const std::vector<Parser::Combo>& combos, const std::vector<std::string>& skips )
 {
 	ComboGenerator cg{};
@@ -946,17 +937,17 @@ std::vector<std::pair<std::string, std::string>> GenerateSkipAsserts( const std:
 	return asserts;
 }
 
-static void SetupConfiguration( const std::vector<CfgProcessor::ShaderConfig>& configs, const std::string& version, const std::filesystem::path& root, bool bVerbose )
+static void SetupConfiguration( const std::vector<CfgProcessor::ShaderConfig>& configs, const std::filesystem::path& root, bool bVerbose )
 {
 	using namespace std::literals;
-
 	const auto& AddCombos = []( ComboGenerator& cg, const std::vector<Parser::Combo>& combos, bool staticC )
 	{
 		for ( const Parser::Combo& combo : combos )
 			cg.AddDefine( Define( combo.name, combo.minVal, combo.maxVal, staticC ) );
 	};
 
-	const auto& mapping = shaderVersionMapping.at( version );
+	char baseTemplate[] = { " s_ _ " };
+
 	robin_hood::unordered_node_set<std::string> includes;
 	for ( const auto& conf : configs )
 	{
@@ -973,10 +964,14 @@ static void SetupConfiguration( const std::vector<CfgProcessor::ShaderConfig>& c
 		AddCombos( cg, conf.static_c, true );
 		exprSkip.Parse( ( std::accumulate( conf.skip.begin(), conf.skip.end(), "("s, []( const std::string& s, const std::string& sk ) { return s + sk + ")||("; } ) + "0)" ) );
 
+		baseTemplate[0] = conf.target[0];
+		baseTemplate[3] = conf.version[0];
+		baseTemplate[5] = conf.version.size() == 3 ? 'b' : conf.version[1];
+
 		CfgProcessor::CfgEntryInfo& info = cfg.m_eiInfo;
 		info.m_szName = cfg.m_szName;
 		info.m_szShaderFileName = cfg.m_szShaderSrc;
-		info.m_szShaderVersion = *s_strPool.emplace( mapping[cfg.m_szName.find( "_vs"sv ) != std::string_view::npos] ).first;
+		info.m_szShaderVersion = *s_strPool.emplace( baseTemplate ).first;
 		info.m_numCombos = cg.NumCombos();
 		info.m_numDynamicCombos = cg.NumCombos( false );
 		info.m_numStaticCombos = cg.NumCombos( true );
@@ -1018,7 +1013,7 @@ static void SetupConfiguration( const std::vector<CfgProcessor::ShaderConfig>& c
 
 		// We also establish mapping by either splitting the
 		// combos into 500 intervals or stepping by every 1000 combos.
-		const uint64_t iPartStep = std::max<uint64_t>( 1000, chi.m_numCombos / 500 );
+		const uint64_t iPartStep = std::max( 1000ULL, chi.m_numCombos / 500 );
 		for ( uint64_t iRecord = nCurrentCommand + iPartStep; iRecord < nCurrentCommand + chi.m_numCombos; iRecord += iPartStep )
 		{
 			uint64_t iAdvance = iPartStep;
@@ -1055,9 +1050,9 @@ static ComboHandle AsHandle( CPCHI_t* pImpl ) noexcept
 	return reinterpret_cast<ComboHandle>( pImpl );
 }
 
-void SetupConfiguration( const std::vector<ShaderConfig>& configs, const std::string& version, const std::filesystem::path& root, bool bVerbose )
+void SetupConfiguration( const std::vector<ShaderConfig>& configs, const std::filesystem::path& root, bool bVerbose )
 {
-	ConfigurationProcessing::SetupConfiguration( configs, version, root, bVerbose );
+	ConfigurationProcessing::SetupConfiguration( configs, root, bVerbose );
 }
 
 std::unique_ptr<CfgProcessor::CfgEntryInfo[]> DescribeConfiguration( bool bPrintExpressions )

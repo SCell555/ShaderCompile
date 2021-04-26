@@ -316,7 +316,7 @@ public:
 	inline ezOptionValidator( char _type, char _op, const unsigned int* list, int _size );
 	inline ezOptionValidator( char _type, char _op, const long long* list, int _size );
 	inline ezOptionValidator( char _type, char _op, const unsigned long long* list, int _size = 0 );
-	inline ezOptionValidator( char _type, char _op, const char** list, int _size, bool _insensitive );
+	inline ezOptionValidator( char _type, char _op, const char* const* list, int _size, bool _insensitive );
 	inline ~ezOptionValidator();
 
 	inline bool isValid( const std::string* value );
@@ -494,7 +494,7 @@ ezOptionValidator::ezOptionValidator( char _type, char _op, const unsigned long 
 	memcpy( u8, list, size * sizeof( unsigned long long ) );
 }
 /* ------------------------------------------------------------------- */
-ezOptionValidator::ezOptionValidator( char _type, char _op, const char** list, int _size, bool _insensitive )
+ezOptionValidator::ezOptionValidator( char _type, char _op, const char* const* list, int _size, bool _insensitive )
 	: t( 0 ), op( _op ), quiet( 0 ), type( _type ), size( _size ), insensitive( _insensitive )
 {
 	id = ezOptionParserIDGenerator::instance().next();

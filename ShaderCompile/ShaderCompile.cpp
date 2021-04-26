@@ -73,7 +73,6 @@ using namespace std::literals;
 
 using Clock = chrono::high_resolution_clock;
 static fs::path g_pShaderPath;
-static std::string g_pShaderVersion;
 static Clock::time_point g_flStartTime;
 static bool g_bVerbose	= false;
 static bool g_bVerbose2 = false;
@@ -1154,7 +1153,16 @@ static void Shader_ParseShaderInfoFromCompileCommands( const CfgProcessor::CfgEn
 	}
 }
 
-static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> Shared_ParseListOfCompileCommands( std::set<std::string> files, bool bForce, bool bSpewSkips )
+struct ShaderInputData
+{
+	std::string name;
+	std::string_view version;
+	std::string_view target;
+
+	bool operator==(const ShaderInputData&) const = default;
+	std::strong_ordering operator<=>(const ShaderInputData&) const = default;
+};
+static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> Shared_ParseListOfCompileCommands( std::set<ShaderInputData> files, bool bForce, bool bSpewSkips )
 {
 	using namespace std::literals;
 	const Clock::time_point tt_start = Clock::now();
@@ -1165,20 +1173,22 @@ static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> Shared_ParseListOfCompileCo
 	for ( const auto& file : files )
 	{
 		uint32_t crc;
-		std::string name = Parser::ConstructName( file, g_pShaderVersion );
-		if ( Parser::CheckCrc( g_pShaderPath / file, root, name, crc ) && !bForce )
+		std::string name = Parser::ConstructName( file.name, file.target, file.version );
+		if ( Parser::CheckCrc( g_pShaderPath / file.name, root, name, crc ) && !bForce )
 			continue;
 
 		CfgProcessor::ShaderConfig conf;
-		if ( !Parser::ParseFile( g_pShaderPath / file, root, g_pShaderVersion, conf.static_c, conf.dynamic_c, conf.skip, conf.centroid_mask, conf.includes ) )
+		if ( !Parser::ParseFile( g_pShaderPath / file.name, root, file.target, file.version, conf ) )
 		{
-			std::cout << clr::red << "Failed to parse "sv << file << clr::reset << std::endl;
+			std::cout << clr::red << "Failed to parse "sv << file.name << clr::reset << std::endl;
 			failed = true;
 			continue;
 		}
-		Parser::WriteInclude( g_pShaderPath / "include"sv / ( name + ".inc" ), name, conf.static_c, conf.dynamic_c, conf.skip );
+		Parser::WriteInclude( g_pShaderPath / "include"sv / ( name + ".inc" ), name, file.target, conf.static_c, conf.dynamic_c, conf.skip );
 		conf.name = std::move( name );
 		conf.crc32 = crc;
+		conf.target = file.target;
+		conf.version = file.version;
 		configs.emplace_back( std::move( conf ) );
 	}
 
@@ -1188,7 +1198,7 @@ static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> Shared_ParseListOfCompileCo
 	if ( configs.empty() )
 		exit( 0 );
 
-	CfgProcessor::SetupConfiguration( configs, g_pShaderVersion, g_pShaderPath, g_bVerbose );
+	CfgProcessor::SetupConfiguration( configs, g_pShaderPath, g_bVerbose );
 
 	auto arrEntries = CfgProcessor::DescribeConfiguration( bSpewSkips );
 
@@ -1253,7 +1263,7 @@ static LONG WINAPI ExceptionFilter( _EXCEPTION_POINTERS* pExceptionInfo )
 
 	// strip off the rest of the path from the .exe name
 	char rgchModuleName[MAX_PATH];
-	::GetModuleFileName( nullptr, rgchModuleName, ARRAYSIZE( rgchModuleName ) );
+	::GetModuleFileName( nullptr, rgchModuleName, std::size( rgchModuleName ) );
 	char* pch1 = strchr( rgchModuleName, '.' );
 	if ( pch1 )
 		*pch1 = 0;
@@ -1266,7 +1276,7 @@ static LONG WINAPI ExceptionFilter( _EXCEPTION_POINTERS* pExceptionInfo )
 
 	// can't use the normal string functions since we're in tier0
 	char rgchFileName[MAX_PATH];
-	_snprintf_s( rgchFileName, ARRAYSIZE( rgchFileName ),
+	_snprintf_s( rgchFileName, std::size( rgchFileName ),
 		"%s_%d%.2d%2d%.2d%.2d%.2d.mdmp",
 		pch,
 		pTime.tm_year + 1900,	/* Year less 2000 */
@@ -1296,7 +1306,7 @@ static LONG WINAPI ExceptionFilter( _EXCEPTION_POINTERS* pExceptionInfo )
 	if ( !bMinidumpResult )
 	{
 		char rgchFailedFileName[_MAX_PATH];
-		_snprintf_s( rgchFailedFileName, ARRAYSIZE( rgchFailedFileName ), "failed_%s", rgchFileName );
+		_snprintf_s( rgchFailedFileName, std::size( rgchFailedFileName ), "failed_%s", rgchFileName );
 		std::error_code c;
 		fs::rename( rgchFileName, rgchFailedFileName, c );
 	}
@@ -1406,6 +1416,16 @@ static void WriteStats()
 	std::cout << "\r"sv << clr::green << FormatTime( duration_cast<chrono::seconds>( end - g_flStartTime ).count() ) << clr::reset << " elapsed"sv << std::endl;
 }
 
+static constexpr const char* const validTypes[] =
+{
+	"vs", "ps", "gs", "ds", "hs"
+};
+
+static constexpr const char* const validModels[] =
+{
+	"20b", "30", "40", "41", "50", "51"
+};
+
 int main( int argc, const char* argv[] )
 {
 	{
@@ -1419,7 +1439,7 @@ int main( int argc, const char* argv[] )
 	ez::ezOptionParser cmdLine{};
 	cmdLine.overview = "Source shader compiler.";
 	cmdLine.syntax   = "ShaderCompile [OPTIONS] file1.fxc [file2.fxc...]";
-	cmdLine.add( "", true, 1, 0, "Sets shader version", "-ver", "/ver" );
+	cmdLine.add( "", true, -1, ',', "Sets shader version", "-ver", "/ver", new ez::ezOptionValidator{ ez::ezOptionValidator::T, ez::ezOptionValidator::IN, validModels, std::size( validModels ), false } );
 	cmdLine.add( "", true, 1, 0, "Base path for shaders", "-shaderpath", "/shaderpath" );
 	cmdLine.add( "", false, 0, 0, "Skip crc check during compilation", "-force", "/force" );
 	cmdLine.add( "", false, 0, 0, "Calculate crc for shader", "-crc", "/crc" );
@@ -1438,6 +1458,7 @@ int main( int argc, const char* argv[] )
 	cmdLine.add( "", false, 0, 0, "Disables shader optimization", "/Od", "-disable-optimization" );
 	cmdLine.add( "", false, 0, 0, "Enable debugging information", "/Zi", "-debug-info" );
 	cmdLine.add( "1", false, 1, 0, "Set optimization level (0-3)", "/O", "-optimize" );
+	cmdLine.add( "", false, -1, ',', "Set shader type, if compiling multiple different shaders, values can be separated by ','", "/T", "-types", new ez::ezOptionValidator{ ez::ezOptionValidator::T, ez::ezOptionValidator::IN, validTypes, std::size( validTypes ), false } );
 
 	cmdLine.parse( argc, argv );
 
@@ -1509,16 +1530,43 @@ int main( int argc, const char* argv[] )
 		return -1;
 	}
 
-	cmdLine.get( "-ver" )->getString( g_pShaderVersion );
-	if ( !Parser::ValidateVersion( g_pShaderVersion ) )
+	std::vector<std::string> badArgs;
+	if ( !cmdLine.gotValid( badOptions, badArgs ) )
 	{
-		std::cout << clr::red << "Shader uses unknown shader version: "sv << clr::pinkish << g_pShaderVersion << clr::reset << std::endl;
+		for (size_t i = 0; i < badOptions.size(); ++i )
+		std::cout << clr::red << clr::bold << "ERROR: Got invalid argument \""sv << badArgs[i] << "\" for option "sv << badOptions[i] << clr::reset << std::endl;
+		std::cout << clr::reset << std::endl;
 		return -1;
 	}
 
-	std::set<std::string> files;
-	for ( const auto& f : cmdLine.lastArgs )
-		files.insert( fs::path( *f ).filename().string() );
+	auto targets = cmdLine.get( "/T" );
+	auto versions = cmdLine.get( "-ver" );
+	if ( auto s = versions->args[0]->size(); s != 1 && s != cmdLine.lastArgs.size() )
+	{
+		std::cout << clr::red << clr::bold << "ERROR: Argument count for -ver doesn't match input shader count"sv << clr::reset;
+		return -1;
+	}
+
+	if ( auto s = targets->args.empty() ? 0 : targets->args[0]->size(); s > 1 && s != cmdLine.lastArgs.size() )
+	{
+		std::cout << clr::red << clr::bold << "ERROR: Argument count for -types doesn't match input shader count"sv << clr::reset;
+		return -1;
+	}
+
+	std::set<ShaderInputData> files;
+	const bool noTargets = targets->args.empty() || targets->args[0]->empty();
+	for ( size_t i = 0, c = cmdLine.lastArgs.size(); i < c; ++i )
+	{
+		std::string_view version = versions->args[0]->size() == 1 ? *versions->args[0]->at( 0 ) : *versions->args[0]->at( i );
+		std::string_view target;
+		if ( noTargets )
+			target = Parser::GetTarget( *cmdLine.lastArgs[i] );
+		else
+			target = targets->args[0]->size() == 1 ? *targets->args[0]->at( 0 ) : *targets->args[0]->at( i );
+		if ( version == "20b"sv && target == "vs"sv )
+			version = "20"sv;
+		files.insert( ShaderInputData{ fs::path( *cmdLine.lastArgs[i] ).filename().string(), version, target } );
+	}
 
 	std::string path;
 	cmdLine.get( "-shaderpath" )->getString( path );
@@ -1529,9 +1577,9 @@ int main( int argc, const char* argv[] )
 		const auto root = g_pShaderPath.string();
 		for ( const auto& file : files )
 		{
-			const std::string name = Parser::ConstructName( file, g_pShaderVersion );
+			const std::string name = Parser::ConstructName( file.name, file.target, file.version );
 			uint32_t crc = 0;
-			Parser::CheckCrc( g_pShaderPath / file, root, name, crc );
+			Parser::CheckCrc( g_pShaderPath / file.name, root, name, crc );
 			std::cout << crc << std::endl;
 		}
 		return 0;
@@ -1543,18 +1591,14 @@ int main( int argc, const char* argv[] )
 		const auto root = g_pShaderPath.string();
 		for ( const auto& file : files )
 		{
-			std::vector<Parser::Combo> static_c, dynamic_c;
-			std::vector<std::string> skip;
-			uint32_t centroid_mask = 0;
-			std::vector<std::string> includes;
-
-			if ( !Parser::ParseFile( g_pShaderPath / file, root, g_pShaderVersion, static_c, dynamic_c, skip, centroid_mask, includes ) )
+			CfgProcessor::ShaderConfig conf;
+			if ( !Parser::ParseFile( g_pShaderPath / file.name, root, file.target, file.version, conf ) )
 			{
-				std::cout << clr::red << "Failed to parse "sv << file << clr::reset << std::endl;
+				std::cout << clr::red << "Failed to parse "sv << file.name << clr::reset << std::endl;
 				failed = true;
 			}
-			const std::string name = Parser::ConstructName( file, g_pShaderVersion );
-			Parser::WriteInclude( g_pShaderPath / "include"sv / ( name + ".inc" ), name, static_c, dynamic_c, skip );
+			const std::string name = Parser::ConstructName( file.name, file.target, file.version );
+			Parser::WriteInclude( g_pShaderPath / "include"sv / ( name + ".inc" ), name, file.target, conf.static_c, conf.dynamic_c, conf.skip );
 		}
 		return failed ? -1 : 0;
 	}

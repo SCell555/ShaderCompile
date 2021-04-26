@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "shaderparser.h"
+#include "cfgprocessor.h"
 #include "termcolor/style.hpp"
 #include "termcolors.hpp"
 #include "re2/re2.h"
@@ -47,7 +48,8 @@ namespace r
 	static const RE2 static_combo( R"reg(^\s*//\s*STATIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)".*)reg" );
 	static const RE2 dynamic_combo( R"reg(^\s*//\s*DYNAMIC\s*:\s*"(.*)"\s+"(\d+)\.\.(\d+)".*)reg" );
 	static const RE2 centroid( R"reg(^\s*//\s*CENTROID\s*:\s*TEXCOORD(\d+).*$)reg" );
-	static const RE2 version( R"reg(^(.*_[vp]s)(\d\db|\d\d|\dx|xx))reg" );
+	static const RE2 base_name( R"reg(^(.*)_[vpgdh]s(\d\db|\d\d|\dx|xx))reg" );
+	static const RE2 target( R"reg(^.*_([vpgdh]s)(\d\db|\d\d|\dx|xx))reg" );
 	static const RE2 c_comment_start( R"reg(^(.*)\/\*)reg");
 	static const RE2 c_comment_end( R"reg(\*\/(.*)$)reg");
 	static const RE2 c_inline_comment( R"reg(^(.*)\/\*.*?\*\/(.*))reg");
@@ -61,18 +63,19 @@ Parser::Combo::Combo( const std::string& name, int32_t min, int32_t max, const s
 		initVal = initVal.substr( 0, f );
 }
 
-bool Parser::ValidateVersion( const std::string& ver )
+std::string Parser::ConstructName( const std::string& baseName, const std::string_view& target, const std::string_view& ver )
 {
-	return ver == "20b"sv || ver == "30"sv || ver == "40"sv || ver == "41"sv || ver == "50"sv || ver == "51"sv;
+	std::string name;
+	if ( re2::RE2::PartialMatch( baseName, r::base_name, &name ) )
+		return name + "_"s + std::string( target ) + std::string( ver );
+	return fs::path( baseName ).stem().string() + "_"s + std::string( target ) + std::string( ver );
 }
 
-std::string Parser::ConstructName( const std::string& baseName, const std::string& ver )
+std::string_view Parser::GetTarget( const std::string& baseName )
 {
-	std::string name, fileVer;
-	re2::RE2::PartialMatch( baseName, r::version, &name, &fileVer );
-	if ( ver == "20b"sv && name.rfind( "_vs"sv ) == name.length() - 3 )
-		return name + "20";
-	return name + ver;
+	re2::StringPiece target;
+	re2::RE2::PartialMatch( baseName, r::target, &target );
+	return { target.data(), target.size() };
 }
 
 template <typename T>
@@ -141,17 +144,24 @@ static bool ReadFile( const fs::path& name, const std::string& srcPath, std::vec
 	return !cComment;
 }
 
-bool Parser::ParseFile( const fs::path& name, const std::string& root, const std::string& _version, std::vector<Combo>& static_c, std::vector<Combo>& dynamic_c,
-						std::vector<std::string>& skip, uint32_t& centroid_mask, std::vector<std::string>& includes )
+static constexpr const char validL[] = { 'v', 'p', 'g', 'h', 'd' };
+static constexpr const char validU[] = { 'V', 'P', 'G', 'H', 'D' };
+bool Parser::ParseFile( const fs::path& name, const std::string& root, const std::string_view& target, const std::string_view& version, CfgProcessor::ShaderConfig& conf )
 {
 	using re2::RE2;
-	centroid_mask = 0U;
+	conf.centroid_mask = 0U;
 	const auto nameS = name.string();
 	const auto f = nameS.find_last_of( '.' );
-	const bool isPs = RE2::PartialMatch( f != std::string::npos ? nameS.substr( 0, f ) : nameS, RE2( R"reg(_ps(\d\db|\d\d|\dx|xx)$)reg"s ) );
-	const RE2 shouldMatch( isPs ? R"reg(\[ps(\d+\w?)\])reg"s : R"reg(\[vs(\d+\w?)\])reg"s );
-	const RE2 shouldNotMatch( isPs ? R"reg(\[vs\d+\w?\])reg"s : R"reg(\[ps\d+\w?\])reg"s );
-	const std::string version = !isPs && _version == "20b"sv ? "20" : _version;
+	char regMatch[] = { R"reg(\[ s(\d+\w?)\])reg" };
+	char regNotMatch[] = { R"reg(\[[    ]s\d+\w?\])reg" };
+
+	regMatch[2] = target[0];
+	for ( int i = 0, j = 0; i < 5; ++i )
+		if ( validL[i] != target[0] )
+			regNotMatch[3 + j++] = validL[i];
+	mainCat[0] = toupper( target[0] );
+	const RE2 shouldMatch( regMatch );
+	const RE2 shouldNotMatch( regNotMatch );
 
 	const auto& trim = []( std::string s ) -> std::string
 	{
@@ -195,32 +205,34 @@ bool Parser::ParseFile( const fs::path& name, const std::string& root, const std
 			return;
 		RE2::PartialMatch( line, r::init, &init );
 		if ( name == "STATIC"sv )
-			combo( r::static_combo, line, init, static_c );
+			combo( r::static_combo, line, init, conf.static_c );
 		else if ( name == "DYNAMIC"sv )
-			combo( r::dynamic_combo, line, init, dynamic_c );
+			combo( r::dynamic_combo, line, init, conf.dynamic_c );
 		else if ( name == "CENTROID"sv )
 		{
 			uint32_t v = 0;
 			RE2::FullMatch( trim( line ), r::centroid, &v );
-			centroid_mask |= 1 << v;
+			conf.centroid_mask |= 1 << v;
 		}
 		else
 		{
 			RE2::GlobalReplace( &value, shouldMatch, {} );
 			RE2::Replace( &value, r::pc_reg, {} );
-			skip.emplace_back( trim( std::move( value ) ) );
+			conf.skip.emplace_back( trim( std::move( value ) ) );
 		}
 	};
 
-	return ReadFile( name, root, includes, read );
+	return ReadFile( name, root, conf.includes, read );
 }
 
-void Parser::WriteInclude( const fs::path& fileName, const std::string& name, const std::vector<Combo>& static_c,
+void Parser::WriteInclude( const fs::path& fileName, const std::string& name, const std::string_view& target, const std::vector<Combo>& static_c,
 							const std::vector<Combo>& dynamic_c, const std::vector<std::string>& skip )
 {
-	const bool isVs = RE2::PartialMatch( name, RE2( R"reg(_vs(\d\db|\d\d|\dx|xx)$)reg"s ) );
 	if ( fs::exists( fileName ) )
 		fs::permissions( fileName, fs::perms::owner_read | fs::perms::owner_write );
+
+	char prefix[] = { " sh_" };
+	prefix[0] = target[0];
 
 	{
 		fs::create_directories( fileName.parent_path() );
@@ -283,7 +295,7 @@ void Parser::WriteInclude( const fs::path& fileName, const std::string& name, co
 
 			std::string suffixLower( suffix.length(), ' ' );
 			std::transform( suffix.begin(), suffix.end(), suffixLower.begin(), []( const char& c ) { return (char)std::tolower( c ); } );
-			const std::string& pref = ( isVs ? "vsh_"s : "psh_"s ) + "forgot_to_set_"s + suffixLower + "_"s;
+			const std::string& pref = prefix + "forgot_to_set_"s + suffixLower + "_"s;
 			file << "#define shader"sv << suffix << "Test_"sv << name << " "sv;
 			if ( hasIfdef )
 				file << std::accumulate( vars.begin(), vars.end(), ""s, [&pref]( const std::string& s, const Combo& c ) { return c.initVal.empty() ? ( s + " + " + pref + c.name ) : s; } ).substr( 3 );
