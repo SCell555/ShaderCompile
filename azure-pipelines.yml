@@ -2,16 +2,19 @@ trigger:
 - master
 
 pool:
-  vmImage: 'windows-2019'
+  vmImage: 'windows-latest'
 
 steps:
  - checkout: self
    submodules: true
- - task: VSBuild@1
+ - task: CMake@1
    inputs:
-     solution: ShaderCompile.sln
-     configuration: Release
-     platform: x64
+     cmakeArgs: '.'
+     workingDirectory: '.'
+ - task: CMake@1
+   inputs:
+     cmakeArgs: '--build . --parallel --config Release'
+     workingDirectory: '.'
  - task: CopyFiles@2
    inputs:
      SourceFolder: 'scripts'
@@ -19,7 +22,7 @@ steps:
      TargetFolder: $(Build.ArtifactStagingDirectory)
  - task: CopyFiles@2
    inputs:
-     SourceFolder: 'x64/Release'
+     SourceFolder: 'Release'
      Contents: '*.exe'
      TargetFolder: $(Build.ArtifactStagingDirectory)/bin
  - task: PublishPipelineArtifact@1
