@@ -100,7 +100,6 @@ namespace termcolor
                 buffer[19] = '\0';
             }
 
-            constexpr operator const char*() const noexcept { return buffer; }
             constexpr const char* get() const noexcept { return buffer; }
 
         private:
@@ -391,11 +390,21 @@ namespace termcolor
     }
 
     inline
+    std::ostream& operator<< (std::ostream& stream, const _internal::ansi_color& color)
+    {
+        if (_internal::is_colorized(stream))
+        {
+            stream << color.get();
+        }
+        return stream;
+    }
+
+    inline
     std::ostream& operator<< (std::ostream& stream, const __color_index_8bit& color)
     {
         if (_internal::is_colorized(stream))
         {
-            stream << _internal::ansi_color(color);
+            stream << _internal::ansi_color(color).get();
         }
         return stream;
     }
@@ -405,7 +414,7 @@ namespace termcolor
     {
         if (_internal::is_colorized(stream))
         {
-            stream << _internal::ansi_color(color);
+            stream << _internal::ansi_color(color).get();
         }
         return stream;
     }
@@ -463,6 +472,7 @@ namespace termcolor
 
 } // namespace termcolor
 
+using termcolor::operator<<;
 
 #undef TERMCOLOR_OS_WINDOWS
 #undef TERMCOLOR_OS_MACOS

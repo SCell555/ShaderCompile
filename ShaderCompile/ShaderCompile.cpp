@@ -66,6 +66,22 @@ extern "C" {
 // Type conversions should be controlled by programmer explicitly - shadercompile makes use of 64-bit integer arithmetics
 #pragma warning( error : 4244 )
 
+namespace clr
+{
+	template <typename T>
+	static inline _Smanip2<const T&> escaped(const T& str)
+	{
+		const auto _escape = [](std::ostream& s, const T& str) -> void
+		{
+			if (_internal::is_colorized(s))
+			{
+				s << str;
+			}
+		};
+		return { _escape, str };
+	}
+}
+
 namespace fs = std::filesystem;
 namespace chrono = std::chrono;
 using std::chrono::duration_cast;
@@ -78,7 +94,7 @@ static bool g_bVerbose	= false;
 static bool g_bVerbose2 = false;
 static bool g_bFastFail = false;
 
-static constexpr const std::string_view lineRewind = "\r\033[2K"sv;
+static constexpr const std::string_view lineRewind = "\033[2K"sv;
 static constexpr const std::string_view endLine = "\r"sv;
 
 struct ShaderInfo_t
@@ -507,7 +523,7 @@ static void WriteShaderFiles( std::string_view pShaderName )
 	//
 	// Progress indication
 	//
-	std::cout << lineRewind << szShaderFileOperation << " "sv << ( bShaderFailed ? clr::red : clr::green ) << pShaderName << clr::reset << "..."sv << endLine;
+	std::cout << "\r"sv << clr::escaped( lineRewind ) << szShaderFileOperation << " "sv << (bShaderFailed ? clr::red : clr::green) << pShaderName << clr::reset << "..."sv << endLine;
 
 	//
 	// Retrieve the data we are going to operate on
@@ -535,7 +551,7 @@ static void WriteShaderFiles( std::string_view pShaderName )
 	{
 		std::error_code c;
 		fs::remove( path, c );
-		std::cout << lineRewind << clr::red << pShaderName << clr::reset << " "sv << FormatTimeShort( duration_cast<chrono::seconds>( Clock::now() - lastTime ).count() ) << std::endl;
+		std::cout << "\r"sv << clr::escaped( lineRewind ) << clr::red << pShaderName << clr::reset << " "sv << FormatTimeShort( duration_cast<chrono::seconds>( Clock::now() - lastTime ).count() ) << std::endl;
 		lastTime = Clock::now();
 		return;
 	}
@@ -669,7 +685,7 @@ static void WriteShaderFiles( std::string_view pShaderName )
 	// Finalize, free memory
 	delete pByteCodeArray;
 
-	std::cout << lineRewind << clr::green << pShaderName << clr::reset << " "sv << FormatTimeShort( duration_cast<chrono::seconds>( Clock::now() - lastTime ).count() ) << std::endl;
+	std::cout << "\r"sv << clr::escaped( lineRewind ) << clr::green << pShaderName << clr::reset << " "sv << FormatTimeShort( duration_cast<chrono::seconds>( Clock::now() - lastTime ).count() ) << std::endl;
 	lastTime = Clock::now();
 }
 
@@ -730,7 +746,7 @@ static size_t AssembleWorkerReplyPackage( const CfgProcessor::CfgEntryInfo* pEnt
 			s_averageProcess.PushValue( s_nLastEntry - nComboOfEntry );
 			s_nLastEntry = nComboOfEntry;
 			const auto avg = s_averageProcess.GetAverage();
-			std::cout << lineRewind << "Compiling "sv << ( g_ShaderHadError.contains( pEntry->m_szName ) ? clr::red : clr::green ) << pEntry->m_szName << clr::reset << " ["sv << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining] "sv
+			std::cout << "\r"sv << clr::escaped( lineRewind ) << "Compiling "sv << ( g_ShaderHadError.contains( pEntry->m_szName ) ? clr::red : clr::green ) << pEntry->m_szName << clr::reset << " ["sv << clr::blue << PrettyPrint( nComboOfEntry ) << clr::reset << " remaining] "sv
 				<< FormatTimeShort( duration_cast<chrono::seconds>( fCurTime - g_flStartTime ).count() ) << " elapsed ("sv << clr::green2 << avg << clr::reset << " c/s, est. remaining "sv << FormatTimeShort( nComboOfEntry / std::max<uint64_t>( avg, 1 ) ) << ")"sv << endLine;
 			s_fLastInfoTime = fCurTime;
 		}
@@ -1249,7 +1265,7 @@ static void CompileShaders( std::unique_ptr<CfgProcessor::CfgEntryInfo[]> arrEnt
 		WriteShaderFiles( pEntry->m_szName );
 	}
 
-	std::cout << lineRewind << endLine;
+	std::cout << "\r"sv << clr::escaped( lineRewind ) << endLine;
 }
 
 static LONG WINAPI ExceptionFilter( _EXCEPTION_POINTERS* pExceptionInfo )
@@ -1314,7 +1330,7 @@ static LONG WINAPI ExceptionFilter( _EXCEPTION_POINTERS* pExceptionInfo )
 	return EXCEPTION_CONTINUE_SEARCH;
 }
 
-static void PrintCompileErrors()
+static void PrintCompileErrors( bool skipWarnings )
 {
 	// Write all the errors
 	//////////////////////////////////////////////////////////////////////////
@@ -1331,7 +1347,7 @@ static void PrintCompileErrors()
 			totalWarnings += msg.second.warning.size();
 			totalErrors += msg.second.error.size();
 		}
-		std::cout << "\033[2K"sv << clr::yellow << "WARNINGS"sv << clr::reset << "/"sv << clr::red << "ERRORS "sv << clr::reset << totalWarnings << "/"sv << totalErrors << std::endl;
+		std::cout << clr::escaped( "\033[2K"sv ) << clr::yellow << "WARNINGS"sv << clr::reset << "/"sv << clr::red << "ERRORS "sv << clr::reset << totalWarnings << "/"sv << totalErrors << std::endl;
 
 		const auto& trim = []( std::string s ) -> std::string
 		{
@@ -1347,23 +1363,26 @@ static void PrintCompileErrors()
 			const auto& shaderName      = sMsg.first;
 			const std::string searchPat = std::string( g_ShaderToShaderInfo[shaderName].m_pShaderSrc ) + "(";
 
-			if ( const size_t warnings = msg.warning.size() )
-				std::cout << "\033[2K"sv << shaderName << " "sv << clr::yellow << warnings << " WARNING(S):"sv << clr::reset << std::endl;
-
-			for ( const auto& warn : msg.warning )
+			if ( !skipWarnings )
 			{
-				const auto& szMsg          = warn.first;
-				const CompilerMsgInfo& cmi = warn.second;
-				const uint64_t numReported = cmi.GetNumTimesReported();
+				if ( const size_t warnings = msg.warning.size() )
+					std::cout << clr::escaped( "\033[2K"sv ) << shaderName << " "sv << clr::yellow << warnings << " WARNING(S):"sv << clr::reset << std::endl;
 
-				std::string m = trim( szMsg );
-				if ( size_t find = m.find( searchPat ); find != std::string::npos && find >= cwdLen )
-					m = m.replace( find - cwdLen, cwdLen, "" );
-				std::cout << "\033[2K"sv << m << "\nReported "sv << clr::green << numReported << clr::reset << " time(s)"sv << std::endl;
+				for ( const auto& warn : msg.warning )
+				{
+					const auto& szMsg          = warn.first;
+					const CompilerMsgInfo& cmi = warn.second;
+					const uint64_t numReported = cmi.GetNumTimesReported();
+
+					std::string m = trim( szMsg );
+					if ( size_t find = m.find( searchPat ); find != std::string::npos && find >= cwdLen )
+						m = m.replace( find - cwdLen, cwdLen, "" );
+					std::cout << clr::escaped( "\033[2K"sv ) << m << "\nReported "sv << clr::green << numReported << clr::reset << " time(s)"sv << std::endl;
+				}
 			}
 
 			if ( const size_t errors = msg.error.size() )
-				std::cout << "\033[2K"sv << shaderName << " "sv << clr::red << errors << " ERROR(S):"sv << clr::reset << std::endl;
+				std::cout << clr::escaped( "\033[2K"sv ) << shaderName << " "sv << clr::red << errors << " ERROR(S):"sv << clr::reset << std::endl;
 
 			// Compiler spew
 			for ( const auto& err : msg.error )
@@ -1376,16 +1395,16 @@ static void PrintCompileErrors()
 				std::string m = trim( szMsg );
 				if ( size_t find = m.find( searchPat ); find != std::string::npos && find >= cwdLen )
 					m = m.replace( find - cwdLen, cwdLen, "" );
-				std::cout << "\033[2K"sv << m << "\nReported "sv << clr::green << numReported << clr::reset << " time(s), example command: "sv << std::endl;
+				std::cout << clr::escaped( "\033[2K"sv ) << m << "\nReported "sv << clr::green << numReported << clr::reset << " time(s), example command: "sv << std::endl;
 
-				std::cout << "\033[2K    "sv << clr::green << cmd << clr::reset << std::endl;
+				std::cout << clr::escaped( "\033[2K"sv ) << "    "sv << clr::green << cmd << clr::reset << std::endl;
 			}
 		}
 	}
 
 	// Failed shaders summary
 	for ( const auto& failed : g_ShaderHadError )
-		std::cout << "\033[2K"sv << clr::pinkish << "FAILED: "sv << clr::red << failed << clr::reset << std::endl;
+		std::cout << clr::escaped( "\033[2K"sv ) << clr::pinkish << "FAILED: "sv << clr::red << failed << clr::reset << std::endl;
 }
 
 static bool s_write = true;
@@ -1396,17 +1415,17 @@ static BOOL WINAPI CtrlHandler( DWORD signal )
 		s_write = false;
 		if ( auto inst = ProcessCommandRange_Singleton::Instance() )
 			inst->Stop();
-		PrintCompileErrors();
+		PrintCompileErrors( false );
 		SetThreadExecutionState( ES_CONTINUOUS );
 	}
 
 	return FALSE;
 }
 
-static void WriteStats()
+static void WriteStats( bool skipWarnings )
 {
 	if ( s_write )
-		PrintCompileErrors();
+		PrintCompileErrors( skipWarnings );
 
 	//
 	// End
@@ -1432,33 +1451,60 @@ int main( int argc, const char* argv[] )
 		const HANDLE console = GetStdHandle( STD_OUTPUT_HANDLE );
 		DWORD mode;
 		GetConsoleMode( console, &mode );
-		SetConsoleMode( console, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING );
+		if ( SetConsoleMode( console, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING ) )
+			std::cout << clr::colorize;
+		else
+			std::cout << clr::nocolorize;
 		SetConsoleCtrlHandler( CtrlHandler, true );
+	}
+
+	bool parseLegacy = false;
+	for ( int i = 1; i < argc; i++ )
+	{
+		if ( !_stricmp (argv[i], "-nompi"  ) || !_stricmp(argv[i], "-nop4" ) )
+		{
+			parseLegacy = true;
+			break;
+		}
 	}
 
 	ez::ezOptionParser cmdLine{};
 	cmdLine.overview = "Source shader compiler.";
 	cmdLine.syntax   = "ShaderCompile [OPTIONS] file1.fxc [file2.fxc...]";
-	cmdLine.add( "", true, -1, ',', "Sets shader version", "-ver", "/ver", new ez::ezOptionValidator{ ez::ezOptionValidator::T, ez::ezOptionValidator::IN, validModels, std::size( validModels ), false } );
-	cmdLine.add( "", true, 1, 0, "Base path for shaders", "-shaderpath", "/shaderpath" );
-	cmdLine.add( "", false, 0, 0, "Skip crc check during compilation", "-force", "/force" );
-	cmdLine.add( "", false, 0, 0, "Calculate crc for shader", "-crc", "/crc" );
-	cmdLine.add( "", false, 0, 0, "Generate only header", "-dynamic", "/dynamic" );
-	cmdLine.add( "", false, 0, 0, "Stop on first error", "-fastfail", "/fastfail" );
-	cmdLine.add( "0", false, 1, 0, "Number of threads used, defaults to core count", "-threads", "/threads" );
-	cmdLine.add( "", false, 0, 0, "Shows help", "-help", "-h", "/help", "/h" );
+	if ( parseLegacy )
+	{
+		cmdLine.add( "", true, 1, 0, "", "-game" );
+		cmdLine.add( "", true, 1, 0, "", "-shaderpath" );
+		cmdLine.add( "0", false, 1, 0, "", "-threads" );
+		cmdLine.add( "", false, 0, 0, "", "-nompi" );
+		cmdLine.add( "", false, 0, 0, "", "-nop4" );
+		cmdLine.add( "", false, 0, 0, "", "-allowdebug" );
+		cmdLine.add( "", false, 0, 0, "", "-target" );
+		cmdLine.add( "", false, 0, 0, "", "-ver" );
+	}
+	else
+	{
+		cmdLine.add( "", true, -1, ',', "Sets shader version", "-ver", "/ver", new ez::ezOptionValidator{ ez::ezOptionValidator::T, ez::ezOptionValidator::IN, validModels, std::size( validModels ), false } );
+		cmdLine.add( "", true, 1, 0, "Base path for shaders", "-shaderpath", "/shaderpath" );
+		cmdLine.add( "", false, 0, 0, "Skip crc check during compilation", "-force", "/force" );
+		cmdLine.add( "", false, 0, 0, "Calculate crc for shader", "-crc", "/crc" );
+		cmdLine.add( "", false, 0, 0, "Generate only header", "-dynamic", "/dynamic" );
+		cmdLine.add( "", false, 0, 0, "Stop on first error", "-fastfail", "/fastfail" );
+		cmdLine.add( "0", false, 1, 0, "Number of threads used, defaults to core count", "-threads", "/threads" );
+		cmdLine.add( "", false, 0, 0, "Shows help", "-help", "-h", "/help", "/h" );
 
-	cmdLine.add( "", false, 0, 0, "Verbose file cache and final shader info", "-verbose", "/verbose" );
-	cmdLine.add( "", false, 0, 0, "Verbose compile commands", "-verbose2", "/verbose2" );
-	cmdLine.add( "", false, 0, 0, "Enables preprocessor debug printing", "-verbose_preprocessor" );
+		cmdLine.add( "", false, 0, 0, "Verbose file cache and final shader info", "-verbose", "/verbose" );
+		cmdLine.add( "", false, 0, 0, "Verbose compile commands", "-verbose2", "/verbose2" );
+		cmdLine.add( "", false, 0, 0, "Enables preprocessor debug printing", "-verbose_preprocessor" );
 
-	cmdLine.add( "", false, 0, 0, "Skips shader validation", "/Vd", "-no-validation" );
-	cmdLine.add( "", false, 0, 0, "Directs the compiler to not use flow-control constructs where possible", "/Gfa", "-no-flow-control" );
-	cmdLine.add( "", false, 0, 0, "Directs the compiler to use flow-control constructs where possible", "/Gfp", "-prefer-flow-control" );
-	cmdLine.add( "", false, 0, 0, "Disables shader optimization", "/Od", "-disable-optimization" );
-	cmdLine.add( "", false, 0, 0, "Enable debugging information", "/Zi", "-debug-info" );
-	cmdLine.add( "1", false, 1, 0, "Set optimization level (0-3)", "/O", "-optimize" );
-	cmdLine.add( "", false, -1, ',', "Set shader type, if compiling multiple different shaders, values can be separated by ','", "/T", "-types", new ez::ezOptionValidator{ ez::ezOptionValidator::T, ez::ezOptionValidator::IN, validTypes, std::size( validTypes ), false } );
+		cmdLine.add( "", false, 0, 0, "Skips shader validation", "/Vd", "-no-validation" );
+		cmdLine.add( "", false, 0, 0, "Directs the compiler to not use flow-control constructs where possible", "/Gfa", "-no-flow-control" );
+		cmdLine.add( "", false, 0, 0, "Directs the compiler to use flow-control constructs where possible", "/Gfp", "-prefer-flow-control" );
+		cmdLine.add( "", false, 0, 0, "Disables shader optimization", "/Od", "-disable-optimization" );
+		cmdLine.add( "", false, 0, 0, "Enable debugging information", "/Zi", "-debug-info" );
+		cmdLine.add( "1", false, 1, 0, "Set optimization level (0-3)", "/O", "-optimize" );
+		cmdLine.add( "", false, -1, ',', "Set shader type, if compiling multiple different shaders, values can be separated by ','", "/T", "-types", new ez::ezOptionValidator{ ez::ezOptionValidator::T, ez::ezOptionValidator::IN, validTypes, std::size( validTypes ), false } );
+	}
 
 	cmdLine.parse( argc, argv );
 
@@ -1491,7 +1537,8 @@ int main( int argc, const char* argv[] )
 		flags |= D3DCOMPILE_DEBUG | D3DCOMPILE_DEBUG_NAME_FOR_SOURCE;
 
 	int optLevel = 1;
-	cmdLine.get( "/O" )->getInt( optLevel );
+	if ( !parseLegacy )
+		cmdLine.get( "/O" )->getInt( optLevel );
 	switch ( optLevel )
 	{
 	case 0:
@@ -1511,8 +1558,7 @@ int main( int argc, const char* argv[] )
 		break;
 	}
 
-	std::vector<std::string> badOptions;
-	if ( !cmdLine.gotRequired( badOptions ) || cmdLine.lastArgs.size() < 1 )
+	if ( std::vector<std::string> badOptions; !cmdLine.gotRequired( badOptions ) || ( !parseLegacy && cmdLine.lastArgs.size() < 1 ) )
 	{
 		std::cout << clr::red << clr::bold << "ERROR: Missing argument"sv << ( badOptions.size() == 1 ? ": "sv : "s:\n"sv ) << clr::reset;
 		for ( const auto& option : badOptions )
@@ -1521,7 +1567,7 @@ int main( int argc, const char* argv[] )
 		return -1;
 	}
 
-	if ( !cmdLine.gotExpected( badOptions ) )
+	if ( std::vector<std::string> badOptions; !cmdLine.gotExpected( badOptions ) )
 	{
 		std::cout << clr::red << clr::bold << "ERROR: Got unexpected number of arguments for option"sv << ( badOptions.size() == 1 ? ": "sv : "s:\n"sv ) << clr::reset;
 		for ( const auto& option : badOptions )
@@ -1530,8 +1576,7 @@ int main( int argc, const char* argv[] )
 		return -1;
 	}
 
-	std::vector<std::string> badArgs;
-	if ( !cmdLine.gotValid( badOptions, badArgs ) )
+	if ( std::vector<std::string> badOptions, badArgs; !cmdLine.gotValid( badOptions, badArgs ) )
 	{
 		for (size_t i = 0; i < badOptions.size(); ++i )
 		std::cout << clr::red << clr::bold << "ERROR: Got invalid argument \""sv << badArgs[i] << "\" for option "sv << badOptions[i] << clr::reset << std::endl;
@@ -1539,9 +1584,11 @@ int main( int argc, const char* argv[] )
 		return -1;
 	}
 
-	auto targets = cmdLine.get( "/T" );
+	auto targets = cmdLine.get( "-target" );
 	auto versions = cmdLine.get( "-ver" );
-	if ( auto s = versions->args[0]->size(); s != 1 && s != cmdLine.lastArgs.size() )
+	if ( parseLegacy )
+		/*skip*/;
+	else if ( auto s = versions->args[0]->size(); s != 1 && s != cmdLine.lastArgs.size() )
 	{
 		std::cout << clr::red << clr::bold << "ERROR: Argument count for -ver doesn't match input shader count"sv << clr::reset;
 		return -1;
@@ -1551,6 +1598,69 @@ int main( int argc, const char* argv[] )
 	{
 		std::cout << clr::red << clr::bold << "ERROR: Argument count for -types doesn't match input shader count"sv << clr::reset;
 		return -1;
+	}
+
+	std::string path;
+	cmdLine.get( "-shaderpath" )->getString( path );
+	g_pShaderPath = fs::absolute( std::move( path ) );
+
+	if ( parseLegacy )
+	{
+		auto fileList = g_pShaderPath / "filelist.txt"sv;
+		if ( !fs::exists( fileList ) )
+		{
+			std::cout << clr::red << "Couldn't find filelist.txt in \""sv << g_pShaderPath << "\"!"sv << clr::reset << std::endl;
+			return -1;
+		}
+
+		struct hasher : std::hash<std::string_view>
+		{
+			using is_transparent = int;
+		};
+		struct equaler : std::equal_to<std::string_view>
+		{
+			using is_transparent = int;
+		};
+
+		std::unordered_multimap<std::string, std::string, hasher, equaler> files;
+
+		{
+			std::ifstream list( fileList );
+			std::string line, line2;
+			while ( std::getline( list, line ) )
+			{
+				if ( !line.starts_with( "#BEGIN "sv ) )
+					continue;
+				std::getline( list, line2 );
+				bool is30 = line.ends_with( "30"sv );
+				files.emplace( std::move( line2 ), line.substr( line.length() - ( is30 ? 2 : 3 ), is30 ? 2 : 3 ) );
+			}
+		}
+
+		robin_hood::unordered_set<std::string_view> unique;
+		for ( auto&& f : files )
+			unique.emplace( f.first );
+
+		// fake arguments
+		versions->args.emplace_back( new std::vector<std::string*> );
+		for ( auto&& f : unique )
+		{
+			robin_hood::unordered_set<std::string_view> added;
+			auto it = files.equal_range( f );
+			for ( auto s = it.first; s != it.second; ++s )
+			{
+				if ( !added.emplace( s->second ).second )
+					continue;
+				cmdLine.lastArgs.emplace_back( new std::string( s->first ) );
+				versions->args[0]->emplace_back( new std::string( s->second ) );
+			}
+		}
+
+		if ( cmdLine.lastArgs.empty() )
+		{
+			std::cout << clr::red << "filelist.txt doesn't contain any shaders!"sv << clr::reset << std::endl;
+			return -1;
+		}
 	}
 
 	std::set<ShaderInputData> files;
@@ -1567,10 +1677,6 @@ int main( int argc, const char* argv[] )
 			version = "20"sv;
 		files.insert( ShaderInputData{ fs::path( *cmdLine.lastArgs[i] ).filename().string(), version, target } );
 	}
-
-	std::string path;
-	cmdLine.get( "-shaderpath" )->getString( path );
-	g_pShaderPath = fs::absolute( std::move( path ) );
 
 	if ( cmdLine.isSet( "-crc" ) )
 	{
@@ -1613,11 +1719,30 @@ int main( int argc, const char* argv[] )
 
 	auto entries = Shared_ParseListOfCompileCommands( std::move( files ), cmdLine.isSet( "-force" ), cmdLine.isSet( "-verbose_preprocessor" ) );
 
-	unsigned long threads;
+	unsigned long threads = 0;
 	cmdLine.get( "-threads" )->getULong( threads );
 	CompileShaders( std::move( entries ), threads ? threads : std::thread::hardware_concurrency(), flags );
 
-	WriteStats();
+	WriteStats( parseLegacy );
+
+	if ( parseLegacy )
+	{
+		cmdLine.get( "-game" )->getString( path );
+		fs::path src = g_pShaderPath / "shaders"sv / "fxc"sv;
+		fs::path game = fs::absolute( std::move( path ) ) / "shaders"sv / "fxc"sv;
+		std::error_code c;
+		fs::create_directories( game, c );
+
+		for ( auto&& s : g_ShaderToShaderInfo )
+		{
+			fs::path f = fs::path( s.second.m_pShaderName ).replace_extension( ".vcs" );
+			c.clear();
+			fs::copy_file( src / f, game / f, c );
+			if ( c )
+				std::cout << clr::red << "Coudn't copy "sv << f << " to game shader directory!"sv << clr::reset << std::endl;
+		}
+	}
+
 	SetThreadExecutionState( ES_CONTINUOUS );
 
 	return gsl::narrow_cast<int>( g_ShaderHadError.size() );
