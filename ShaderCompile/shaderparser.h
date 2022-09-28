@@ -26,6 +26,6 @@ namespace Parser
 	std::string_view GetTarget( const std::string& baseName );
 	bool ParseFile( const std::filesystem::path& name, const std::string& root, const std::string_view& target, const std::string_view& version, CfgProcessor::ShaderConfig& conf );
 	void WriteInclude( const std::filesystem::path& fileName, const std::string& name, const std::string_view& target, const std::vector<Combo>& static_c,
-		const std::vector<Combo>& dynamic_c, const std::vector<std::string>& skip );
+		const std::vector<Combo>& dynamic_c, const std::vector<std::string>& skip, bool writeSCI );
 	bool CheckCrc( const std::filesystem::path& sourceFile, const std::string& root, const std::string& name, uint32_t& crc32 );
 }

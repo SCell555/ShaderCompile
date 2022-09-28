@@ -1178,7 +1178,7 @@ struct ShaderInputData
 	bool operator==(const ShaderInputData&) const = default;
 	std::strong_ordering operator<=>(const ShaderInputData&) const = default;
 };
-static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> Shared_ParseListOfCompileCommands( std::set<ShaderInputData> files, bool bForce, bool bSpewSkips )
+static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> Shared_ParseListOfCompileCommands( std::set<ShaderInputData> files, bool bForce, bool bSpewSkips, bool isCSGO )
 {
 	using namespace std::literals;
 	const Clock::time_point tt_start = Clock::now();
@@ -1200,7 +1200,7 @@ static std::unique_ptr<CfgProcessor::CfgEntryInfo[]> Shared_ParseListOfCompileCo
 			failed = true;
 			continue;
 		}
-		Parser::WriteInclude( g_pShaderPath / "include"sv / ( name + ".inc" ), name, file.target, conf.static_c, conf.dynamic_c, conf.skip );
+		Parser::WriteInclude( g_pShaderPath / "include"sv / ( name + ".inc" ), name, file.target, conf.static_c, conf.dynamic_c, conf.skip, isCSGO );
 		conf.name = std::move( name );
 		conf.crc32 = crc;
 		conf.target = file.target;
@@ -1504,6 +1504,7 @@ int main( int argc, const char* argv[] )
 		cmdLine.add( "", false, 0, 0, "Enable debugging information", "/Zi", "-debug-info" );
 		cmdLine.add( "1", false, 1, 0, "Set optimization level (0-3)", "/O", "-optimize" );
 		cmdLine.add( "", false, -1, ',', "Set shader type, if compiling multiple different shaders, values can be separated by ','", "/T", "-types", new ez::ezOptionValidator{ ez::ezOptionValidator::T, ez::ezOptionValidator::IN, validTypes, std::size( validTypes ), false } );
+		cmdLine.add( "", false, 0, 0, "Generate ShaderComboSemantics_t and friends for shader", "-csgo", "/csgo" );
 	}
 
 	cmdLine.parse( argc, argv );
@@ -1691,6 +1692,7 @@ int main( int argc, const char* argv[] )
 		return 0;
 	}
 
+	const bool isCSGO = cmdLine.isSet( "-csgo" );
 	if ( cmdLine.isSet( "-dynamic" ) )
 	{
 		bool failed = false;
@@ -1704,7 +1706,7 @@ int main( int argc, const char* argv[] )
 				failed = true;
 			}
 			const std::string name = Parser::ConstructName( file.name, file.target, file.version );
-			Parser::WriteInclude( g_pShaderPath / "include"sv / ( name + ".inc" ), name, file.target, conf.static_c, conf.dynamic_c, conf.skip );
+			Parser::WriteInclude( g_pShaderPath / "include"sv / ( name + ".inc" ), name, file.target, conf.static_c, conf.dynamic_c, conf.skip, isCSGO );
 		}
 		return failed ? -1 : 0;
 	}
@@ -1717,7 +1719,7 @@ int main( int argc, const char* argv[] )
 	SetUnhandledExceptionFilter( ExceptionFilter );
 	SetThreadExecutionState( ES_CONTINUOUS | ES_SYSTEM_REQUIRED );
 
-	auto entries = Shared_ParseListOfCompileCommands( std::move( files ), cmdLine.isSet( "-force" ), cmdLine.isSet( "-verbose_preprocessor" ) );
+	auto entries = Shared_ParseListOfCompileCommands( std::move( files ), cmdLine.isSet( "-force" ), cmdLine.isSet( "-verbose_preprocessor" ), isCSGO );
 
 	unsigned long threads = 0;
 	cmdLine.get( "-threads" )->getULong( threads );

@@ -232,7 +232,7 @@ bool Parser::ParseFile( const fs::path& name, const std::string& root, const std
 }
 
 void Parser::WriteInclude( const fs::path& fileName, const std::string& name, const std::string_view& target, const std::vector<Combo>& static_c,
-							const std::vector<Combo>& dynamic_c, const std::vector<std::string>& skip )
+							const std::vector<Combo>& dynamic_c, const std::vector<std::string>& skip, bool writeSCI )
 {
 	if ( fs::exists( fileName ) )
 		fs::permissions( fileName, fs::perms::owner_read | fs::perms::owner_write );
@@ -343,21 +343,25 @@ void Parser::WriteInclude( const fs::path& fileName, const std::string& name, co
 		if ( !static_c.empty() )
 			writeComboArray( false, static_c );
 
-		file << "static constexpr ShaderComboSemantics_t "sv << name << "_combos =\n{\n\t\""sv << name << "\", "sv;
+		if ( writeSCI )
+		{
 
-		if ( !dynamic_c.empty() )
-			file << "s_DynamicComboArray_"sv << name << ", "sv << dynamic_c.size() << ", "sv;
-		else
-			file << "nullptr, 0, "sv;
+			file << "static constexpr ShaderComboSemantics_t "sv << name << "_combos =\n{\n\t\""sv << name << "\", "sv;
 
-		if ( !static_c.empty() )
-			file << "s_StaticComboArray_"sv << name << ", "sv << static_c.size();
-		else
-			file << "nullptr, 0"sv;
+			if ( !dynamic_c.empty() )
+				file << "s_DynamicComboArray_"sv << name << ", "sv << dynamic_c.size() << ", "sv;
+			else
+				file << "nullptr, 0, "sv;
 
-		file << "\n};\n"sv;
+			if ( !static_c.empty() )
+				file << "s_StaticComboArray_"sv << name << ", "sv << static_c.size();
+			else
+				file << "nullptr, 0"sv;
 
-		file << "inline const class ConstructMe_"sv << name << "\n{\npublic:\n\tConstructMe_"sv << name << "()\n\t{\n\t\tGetShaderDLL()->AddShaderComboInformation( &"sv << name << "_combos );\n\t}\n} s_ConstuctMe_"sv << name << ";"sv;
+			file << "\n};\n"sv;
+
+			file << "inline const class ConstructMe_"sv << name << "\n{\npublic:\n\tConstructMe_"sv << name << "()\n\t{\n\t\tGetShaderDLL()->AddShaderComboInformation( &"sv << name << "_combos );\n\t}\n} s_ConstuctMe_"sv << name << ";"sv;
+		}
 	}
 
 	fs::permissions( fileName, fs::perms::owner_read );
