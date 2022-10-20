@@ -1479,7 +1479,7 @@ int main( int argc, const char* argv[] )
 		cmdLine.add( "", false, 0, 0, "", "-nompi" );
 		cmdLine.add( "", false, 0, 0, "", "-nop4" );
 		cmdLine.add( "", false, 0, 0, "", "-allowdebug" );
-		cmdLine.add( "", false, 0, 0, "", "-target" );
+		cmdLine.add( "", false, 0, 0, "", "-types" );
 		cmdLine.add( "", false, 0, 0, "", "-ver" );
 	}
 	else
@@ -1585,7 +1585,7 @@ int main( int argc, const char* argv[] )
 		return -1;
 	}
 
-	auto targets = cmdLine.get( "-target" );
+	auto targets = cmdLine.get( "-types" );
 	auto versions = cmdLine.get( "-ver" );
 	if ( parseLegacy )
 		/*skip*/;
