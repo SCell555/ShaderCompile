@@ -25,7 +25,7 @@ static inline void __PrettyPrintNumber( std::ostream& s, uint64_t k )
 		*pchPrint-- = '0' + char( k % 10 );
 	}
 	*++pchPrint ? 0 : *pchPrint = 0;
-	s << chCompileString;
+	s << pchPrint;
 }
 
 static inline _Smanip2<uint64_t> PrettyPrint( uint64_t i )
