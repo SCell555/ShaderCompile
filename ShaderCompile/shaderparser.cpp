@@ -327,24 +327,23 @@ void Parser::WriteInclude( const fs::path& fileName, const std::string& name, co
 
 		writeVars( "Dynamic"sv, dynamic_c, "IShaderDynamicAPI* pShaderAPI"sv, 1U, true );
 
-		file << "\n"sv;
-
-		const auto& writeComboArray = [&file, &name]( bool dynamic, const std::vector<Combo>& combos )
-		{
-			file << "static constexpr ShaderComboInformation_t s_"sv << ( dynamic ? "Dynamic"sv : "Static"sv ) << "ComboArray_"sv << name << "[] =\n{\n"sv;
-			for ( const Combo& c : combos )
-				file << "\t{ \""sv << c.name << "\", "sv << c.minVal << ", "sv << c.maxVal << " },\n"sv;
-			file << "};\n"sv;
-		};
-
-		if ( !dynamic_c.empty() )
-			writeComboArray( true, dynamic_c );
-
-		if ( !static_c.empty() )
-			writeComboArray( false, static_c );
-
 		if ( writeSCI )
 		{
+			file << "\n"sv;
+
+			const auto& writeComboArray = [&file, &name]( bool dynamic, const std::vector<Combo>& combos )
+			{
+				file << "static constexpr ShaderComboInformation_t s_"sv << ( dynamic ? "Dynamic"sv : "Static"sv ) << "ComboArray_"sv << name << "[] =\n{\n"sv;
+				for ( const Combo& c : combos )
+					file << "\t{ \""sv << c.name << "\", "sv << c.minVal << ", "sv << c.maxVal << " },\n"sv;
+				file << "};\n"sv;
+			};
+
+			if ( !dynamic_c.empty() )
+				writeComboArray( true, dynamic_c );
+
+			if ( !static_c.empty() )
+				writeComboArray( false, static_c );
 
 			file << "static constexpr ShaderComboSemantics_t "sv << name << "_combos =\n{\n\t\""sv << name << "\", "sv;
 
