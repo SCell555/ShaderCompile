@@ -130,8 +130,7 @@ static bool ReadFile( const fs::path& name, const std::string& srcPath, std::vec
 			}
 
 			reducedLine.clear();
-			if ( !ReadFile( parent / incl, srcPath, includes, func ) )
-				return false;
+			ReadFile( parent / incl, srcPath, includes, func );
 			continue;
 		}
 		reducedLine.clear();
