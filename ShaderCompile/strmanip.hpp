@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <iomanip>
+#include <string_view>
 
 template <class _Arg>
 struct _Smanip2
@@ -40,14 +41,16 @@ static inline void __FormatTime( std::ostream& s, int64_t nInputSeconds )
 	const int64_t nHours = nMinutes / 60;
 	nMinutes -= nHours * 60;
 
-	constexpr const char* const extra[2] = { "", "s" };
+	static constexpr const std::string_view extra[2] = { "", "s" };
 
+	s << std::setfill( '0' );
 	if ( nHours > 0 )
-		s << clr::green << nHours << clr::reset << " hour" << extra[nHours != 1] << ", " << clr::green << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
+		s << clr::green << nHours << clr::reset << " hour" << extra[nHours != 1] << ", " << clr::green << std::setw( 2 ) << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << std::setw( 2 ) << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
 	else if ( nMinutes > 0 )
-		s << clr::green << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
+		s << clr::green << nMinutes << clr::reset << " minute" << extra[nMinutes != 1] << ", " << clr::green << std::setw( 2 ) << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
 	else
 		s << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
+	s << std::setfill( ' ' );
 }
 
 static inline void __FormatTime2( std::ostream& s, int64_t nInputSeconds )
@@ -57,14 +60,16 @@ static inline void __FormatTime2( std::ostream& s, int64_t nInputSeconds )
 	const int64_t nHours = nMinutes / 60;
 	nMinutes -= nHours * 60;
 
-	constexpr const char* const extra[2] = { "", "s" };
+	static constexpr const std::string_view extra[2] = { "", "s" };
 
+	s << std::setfill( '0' );
 	if ( nHours > 0 )
-		s << clr::green << nHours << clr::reset << ":" << clr::green << nMinutes << clr::reset << ":" << clr::green << nSeconds << clr::reset;
+		s << clr::green << nHours << clr::reset << ":" << clr::green << std::setw( 2 ) << nMinutes << clr::reset << ":" << clr::green << std::setw( 2 ) << nSeconds << clr::reset;
 	else if ( nMinutes > 0 )
-		s << clr::green << nMinutes << clr::reset << ":" << clr::green << nSeconds << clr::reset;
+		s << clr::green << nMinutes << clr::reset << ":" << clr::green << std::setw( 2 ) << nSeconds << clr::reset;
 	else
 		s << clr::green << nSeconds << clr::reset << " second" << extra[nSeconds != 1];
+	s << std::setfill( ' ' );
 }
 
 static inline _Smanip2<int64_t> FormatTime( int64_t i )
